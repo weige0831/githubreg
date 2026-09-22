@@ -386,11 +386,11 @@ async function retryOrFinish(task, why) {
 
 async function runCode(task) {
   if (!(await waitFor(CODE_INPUT_SEL, 300000))) {
-    // 没等到验证码框：可能已原地成功
+    // 没等到验证码框：可能已原地成功，否则自动重来
     if (bodyText().includes("created successfully")) {
       await finish(task);
     } else {
-      log("没等到验证码输入框");
+      await retryOrFinish(task, "5 分钟没等到验证码输入框");
     }
     return;
   }
@@ -423,9 +423,7 @@ async function runCode(task) {
     task.codeAttempts = (task.codeAttempts || 0) + 1;
     await setTask(task);
     if (task.codeAttempts >= 3) {
-      log("验证码多次无效，放弃本次注册");
-      task.stage = "done";
-      await setTask(task);
+      await retryOrFinish(task, "验证码连续 3 次无效");
     } else {
       log("验证码无效或已过期，稍后自动重试...");
     }
@@ -455,7 +453,14 @@ async function autoLogin(task) {
     btn.click();
     log("已点 Sign in");
   } else {
-    log("Sign in 按钮没找到，请手动点击登录");
+    // 找不到按钮就回车提交，别留给人工
+    const pw = qs("#password");
+    if (pw) {
+      pw.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true }));
+      log("Sign in 按钮没找到，已用回车提交登录");
+    } else {
+      log("登录表单提交不了（找不到按钮和密码框）");
+    }
   }
   task.stage = "token";
   await setTask(task);

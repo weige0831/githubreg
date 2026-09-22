@@ -285,6 +285,22 @@ async function startOne(extra = {}) {
   return { email, password, username, token, tabId: tab.id };
 }
 
+
+// 开一个新号：邮局/网络抖动时自动重试，避免整批停在这一步（全自动，不需要人管）
+async function startOneWithRetry(extra = {}, attempts = 3) {
+  let lastErr = null;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await startOne(extra);
+    } catch (e) {
+      lastErr = e;
+      notify(`⚠️ 开新号失败（${i}/${attempts}）：${String((e && e.message) || e)}`);
+      if (i < attempts) await sleep(i * 5000);
+    }
+  }
+  throw lastErr || new Error("开新号失败");
+}
+
 // ===== 账户间清理：删 GitHub cookie + 留一个标签页 =====
 
 // 一次最多连续注册多少个（面板/弹窗的输入框上限也用它，别只改一边）
@@ -362,7 +378,7 @@ async function onRegistrationDone(account) {
       await clashHealthCheck("开下一个号之前"); // 节点太慢/不通就先换，免得新号也跑不动
       notify("等待 10 秒后开始下一个账户...");
       await sleep(10000);
-      await startOne(); // 先开下一个，缩短间隔
+      await startOneWithRetry(); // 先开下一个，缩短间隔（抖动会自动重试）
     } catch (e) {
       notify("批量注册中断: " + String(e));
     }
@@ -719,7 +735,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           await clashHealthCheck("开跑之前"); // 节点不行就先换掉再开始
           startClashAlarm(); // 批量期间每分钟检查一次节点速度
           await sleep(1000);
-          const info = await startOne();
+          const info = await startOneWithRetry();
           notify(count > 1 ? `开始批量注册：共 ${count} 个` : "开始注册");
           sendResponse({ ok: true, ...info, count });
         } catch (e) {
@@ -734,7 +750,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           notify("🔄 换新邮箱重新开一个注册任务...");
           await cleanupBeforeNext({ openGithub: false });
-          const info = await startOne({ recoverAttempts: msg.attempts || 0 });
+          const info = await startOneWithRetry({ recoverAttempts: msg.attempts || 0 });
           sendResponse({ ok: true, ...info });
         } catch (e) {
           notify("换邮箱重开失败: " + String(e));
