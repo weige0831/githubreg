@@ -302,15 +302,19 @@ async function handleBlockedPage(task, kind) {
     return true;
   }
 
-  log('🚧 检测到 ' + kind + '（第 ' + n + ' 次）：清空 GitHub cookie 后从头开跑' + (n >= 4 ? '（并换节点）' : ''));
+  log('🚧 检测到 ' + kind + '（第 ' + n + ' 次）：拉黑当前节点并换一个 + 清空 GitHub cookie，然后从头开跑');
+
+  // ① 拉黑当前节点并换下一个：这类拦截多半和 IP 有关，和清会话一起做，一次覆盖两种原因
+  const sw = await send({ type: 'clash_switch', reason: kind + '：拉黑并换节点', rotate: true, blacklist: true });
+  if (sw && sw.ok) log('已换节点：' + (sw.from || '?') + ' → ' + (sw.to || '?') + '（旧节点已拉黑）');
+  else log('换节点没成功：' + ((sw && sw.error) || '未知原因') + '，继续往下走');
+
+  // ② 清掉 GitHub 的会话（cookie + localStorage）
   const r = await send({ type: 'clear_github_session' });
   if (!r || !r.ok) log('清 GitHub 会话失败：' + ((r && r.error) || '未知原因') + '，仍然继续重开');
 
+  // ③ 连着来几次之后加个等待，别一直猛打 GitHub
   if (n >= 4) {
-    // 清会话解决不了 IP 层面的判定，这时连节点一起换（拉黑当前节点）
-    const sw = await send({ type: 'clash_switch', reason: kind + '：清会话 + 换节点', rotate: true, blacklist: true });
-    if (sw && sw.ok) log('已换节点：' + (sw.from || '?') + ' → ' + (sw.to || '?') + '（旧节点已拉黑）');
-    else log('换节点没成功：' + ((sw && sw.error) || '未知原因'));
     log('等 30 秒再重开，避免连着打 GitHub...');
     await sleep(30000);
   }
