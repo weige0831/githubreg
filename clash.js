@@ -135,7 +135,11 @@ async function clashSwitch(reason) {
       return { ok: false, error: err, group, current: now };
     }
 
-    const probes = usable.slice(0, 3);
+    // 限流场景优先换到不同出口（比如 WARP / Cloudflare）：这时要的是换 IP，不是换最快的，
+    // 同一家机场的节点往往共享出口段，换过去还是被限。
+    const rateLimited = /限流|rate/i.test(String(reason || ""));
+    const preferred = rateLimited ? usable.filter((n) => /warp|cloudflare/i.test(n)) : [];
+    const probes = (preferred.length ? preferred : usable).slice(0, 3);
     const tested = await Promise.all(
       probes.map(async (n) => ({ node: n, delay: await clashDelay(n, cfg) }))
     );
