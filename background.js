@@ -911,7 +911,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "clash_switch": {
         // 手动换，或页面脚本检测到 GitHub 限流时触发（reload=true 表示换完刷新当前页面）
-        const r = await clashSwitch(msg.reason || "手动切换");
+        const r = await clashSwitch(msg.reason || "手动切换", {
+          blacklist: msg.blacklist !== false, // 默认拉黑；限流快速重试阶段会传 false
+          rotate: !!msg.rotate, // true = 按顺序换下一个（绕限流用）
+        });
         let reloaded = false;
         if (r.ok && msg.reload) reloaded = await reloadTaskTab("换节点后刷新重试");
         sendResponse({ ...r, reloaded, status: await clashStatus() });

@@ -264,41 +264,76 @@ async function runFill(task) {
   log("等待 GitHub 验证码...");
 }
 
-// 检测到限流：拉黑当前节点 → 换一个 → 重新打开页面接着跑。
-// 同一任务连着换 3 次还在限流，就等一会儿再来一轮（等待时间逐轮加长，最多 30 分钟），
-// 全都自动进行，不需要人手刷新。限流是按 IP 的，换节点 + 等待是唯一有效的组合。
+// 回到流程里该在的页面（用干净的 GET 地址，避免 POST 结果页弹「确认重新提交表单」）
+function backToFlow(task) {
+  location.href = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
+}
+
+// 遇到限流的处理节奏（按用户要求）：
+//   ① 先换一个节点，然后在**同一个节点上连续刷新 10 次**；
+//   ② 10 次后还限流 → 等 1 分钟，在当前节点再刷新 10 次；
+//   ③ 还限流 → 把当前节点拉黑 10 分钟，换下一个节点，回到 ① 重复；
+//   一直到不出现限流为止，全程不需要人工。
+// 注意：每次页面加载只算一次刷新（页面内的观察器不会重复计数）。
 async function handleRateLimit(task) {
-  task.clashSwitches = (task.clashSwitches || 0) + 1;
-  await setTask(task);
+  const rl = task.rateLimit || { node: "", refresh: 0, waited: false };
 
-  if (task.clashSwitches > 3) {
-    task.clashRounds = (task.clashRounds || 0) + 1;
-    const waitMin = Math.min(30, 5 * task.clashRounds);
-    log(`已连续换 3 个节点仍被限流，等 ${waitMin} 分钟后自动再来一轮（第 ${task.clashRounds} 轮，不用手动操作）`);
-    await setTask(task);
-    await sleep(waitMin * 60000);
-    task.clashSwitches = 0;
-    await setTask(task);
-    log("等待结束，自动继续重试...");
-  }
-
-  log(`🚦 检测到 GitHub 限流，换节点后重新打开页面（本轮第 ${task.clashSwitches} 次）...`);
-  const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true });
-
-  if (r && r.ok) {
-    if (r.reloaded) {
-      log("已换节点" + (r.to ? `（${r.from || "?"} → ${r.to}）` : "") + "，页面已重新打开，继续流程");
+  // ① 刚发现限流：先换一个节点（此时不拉黑）
+  if (!rl.node) {
+    rl.refresh = 0;
+    rl.waited = false;
+    log("🚦 检测到 GitHub 限流：先换一个节点，然后在这个节点上连续刷新重试");
+    const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true, rotate: true, blacklist: false });
+    if (r && r.ok) {
+      rl.node = r.to || "(当前节点)";
+      task.rateLimit = rl;
+      await setTask(task);
+      log(`已换到「${rl.node}」${r.delay != null ? `（延迟 ${r.delay}ms）` : ""}，页面重新打开后开始刷新重试`);
       return true;
     }
-    // 换成功但页面没重新打开（比如标签页没了）：等一下再自己导航一次
-    log("已换节点，但页面没重新打开，3 秒后自己回注册页");
-    await sleep(3000);
-  } else {
-    // 换不了节点（没启用/没可换的）：等 2 分钟再试，别停在这
-    log("换节点没成功：" + ((r && r.error) || "未知原因") + "，2 分钟后自动重试");
-    await sleep(120000);
+    rl.node = "(换节点没成功，先用当前节点)";
+    log("换节点没成功：" + ((r && r.error) || "未知原因") + " —— 先在当前节点刷新重试");
   }
-  location.href = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
+
+  // ② 同一节点上连续刷新，最多 10 次
+  if (rl.refresh < 10) {
+    rl.refresh += 1;
+    task.rateLimit = rl;
+    await setTask(task);
+    log(`🔄 第 ${rl.refresh}/10 次刷新重试（节点：${rl.node}）...`);
+    backToFlow(task);
+    return true;
+  }
+
+  // ③ 刷满 10 次还限流：等 1 分钟，同一节点再刷 10 次
+  if (!rl.waited) {
+    rl.waited = true;
+    rl.refresh = 0;
+    task.rateLimit = rl;
+    await setTask(task);
+    log(`已刷新 10 次仍被限流，等 1 分钟后在「${rl.node}」上继续刷新重试...`);
+    await sleep(60000);
+    backToFlow(task);
+    return true;
+  }
+
+  // ④ 等过一轮还限流：拉黑当前节点 10 分钟，换下一个节点，回到 ② 继续
+  rl.refresh = 0;
+  rl.waited = false;
+  task.rateLimit = rl;
+  await setTask(task);
+  log(`「${rl.node}」刷新 10 次 + 等待 1 分钟仍被限流：拉黑它 10 分钟，换下一个节点继续重试`);
+  const r2 = await send({ type: "clash_switch", reason: "限流：拉黑后换下一个节点", reload: true, rotate: true, blacklist: true });
+  if (r2 && r2.ok) {
+    rl.node = r2.to || "(当前节点)";
+    task.rateLimit = rl;
+    await setTask(task);
+    log(`已拉黑旧节点并换到「${rl.node}」，重新开始 10 次刷新重试`);
+    return true;
+  }
+  log("没有可换的节点了（可能都在黑名单里，等它们解禁）：1 分钟后自动再试");
+  await sleep(60000);
+  backToFlow(task);
   return true;
 }
 
