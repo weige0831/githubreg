@@ -93,6 +93,7 @@ function send(msg) {
 // 注意：content 的日志用独立类型 content_log，
 // 避免消息同时被「面板」和「后台转发」重复显示（面板只认后台转发的 log）
 function log(text) {
+  window.__ghLastLogAt = Date.now(); // 给"卡住看门狗"当心跳：有日志就说明流程在动
   send({ type: "content_log", text });
 }
 function randUsername() {
@@ -353,6 +354,25 @@ async function handleRateLimit(task, kind = "限流") {
   return true;
 }
 
+// 兜底看门狗：任何页面卡住超过 5 分钟（期间一句日志都没有）就按限流/拦截处理，
+// 免得遇到没覆盖到的页面、弹窗、请求卡死就干等在那儿（防止遗漏）
+function watchStuck(task) {
+  // 第一次发现卡住要等满 5 分钟；已经在重试循环里了就只等 1 分钟
+  // （否则每次都要 5 分钟，一轮 10 次刷新要拖 50 分钟）
+  const limitMs = task.rateLimit ? 60000 : 5 * 60 * 1000;
+  const limitMin = limitMs / 60000;
+  const started = Date.now();
+  const timer = setInterval(async () => {
+    if (window.__ghAutoRegRateLimitHandled) return clearInterval(timer);
+    const last = window.__ghLastLogAt || started;
+    if (Date.now() - last < limitMs) return; // 还有动静，继续等
+    clearInterval(timer);
+    window.__ghAutoRegRateLimitHandled = true;
+    log(`⏳ 这个页面超过 ${limitMin} 分钟没有任何进展：按拦截/限流处理（拉黑换节点 + 重新打开页面）`);
+    await handleRateLimit(task, "页面卡住");
+  }, 15000);
+}
+
 // 盯着页面：限流提示常常是首屏之后才出现的，出现就立刻处理
 // 一次页面加载只处理一次（页面级标记），否则同一次刷新会被重复计数
 function watchRateLimit(task) {
@@ -440,7 +460,11 @@ async function retryOrFinish(task, why) {
 }
 
 async function runCode(task) {
-  if (!(await waitFor(CODE_INPUT_SEL, 300000))) {
+  // 等验证码框最多 5 分钟，中间每 90 秒报一次心跳（有日志=没卡住）
+  const hb = setInterval(() => log("还在等 GitHub 的验证码框..."), 90000);
+  const gotInput = await waitFor(CODE_INPUT_SEL, 300000);
+  clearInterval(hb);
+  if (!gotInput) {
     // 没等到验证码框：可能已原地成功，否则自动重来
     if (bodyText().includes("created successfully")) {
       await finish(task);
@@ -461,7 +485,7 @@ async function runCode(task) {
     }
   }
   if (!code) {
-    log("验证码获取超时");
+    await retryOrFinish(task, "验证码获取超时");
     return;
   }
   log("已拿到验证码: " + code);
@@ -775,6 +799,7 @@ async function finish(task) {
   // 限流提示常常是首屏之后才渲染出来的（日志里就遇到过：先"无需处理"，2 秒后才出现提示），
   // 所以再盯 90 秒，出现就立刻换节点刷新
   watchRateLimit(task);
+  watchStuck(task); // 兜底：页面卡住 5 分钟没动静就当限流处理
 
   // 1) 注册成功落地：登录页提示 created successfully -> 自动登录
   if (isLogin && bodyText().includes("created successfully")) {
