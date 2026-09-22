@@ -370,6 +370,20 @@ async function fillLaunchCode(code) {
   return false;
 }
 
+// 这一个号走不下去了（收不到码 / 码一直无效）：自动回注册页重来，最多 3 次，
+// 之后按「无 token」保存并继续下一个 —— 全自动，不留给人工处理。
+async function retryOrFinish(task, why) {
+  task.signupRetries = (task.signupRetries || 0) + 1;
+  await setTask(task);
+  if (task.signupRetries > 3) {
+    log(`${why}：已自动重来 3 次仍未成功，保存账户（无 token）并继续下一个`);
+    await finish(task);
+    return;
+  }
+  log(`${why}：自动回注册页重来（第 ${task.signupRetries} 次）...`);
+  location.href = "https://github.com/signup";
+}
+
 async function runCode(task) {
   if (!(await waitFor(CODE_INPUT_SEL, 300000))) {
     // 没等到验证码框：可能已原地成功
