@@ -54,6 +54,11 @@ function initManagerBox() {
   const msgEl = $id("gamMsg");
   let dirty = false; // 用户动过表单就别再用状态覆盖他的输入
   $id("gamBox").addEventListener("input", () => { dirty = true; });
+  // 别的界面（弹窗/侧边栏/恢复备份）改了配置就同步过来，免得用旧表单把它覆盖回去
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== "local" || !changes.gamConfig || dirty) return;
+    render((await bgSend("gam_get_status")).status);
+  });
 
   function render(s) {
     if (!s) return;
@@ -157,6 +162,10 @@ function initMailBox() {
   const msgEl = $id("mailMsg");
   let dirty = false;
   $id("mailBox").addEventListener("input", () => { dirty = true; });
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== "local" || !changes.mailConfig || dirty) return;
+    render((await bgSend("mail_get_status")).status);
+  });
 
   function render(s) {
     if (!s) return;
@@ -216,6 +225,10 @@ function initClashBox() {
   const msgEl = $id("clashMsg");
   let dirty = false;
   $id("clashBox").addEventListener("input", () => { dirty = true; });
+  chrome.storage.onChanged.addListener(async (changes, area) => {
+    if (area !== "local" || !changes.clashConfig || dirty) return;
+    render((await bgSend("clash_get_status")).status);
+  });
 
   function render(s) {
     if (!s) return;
