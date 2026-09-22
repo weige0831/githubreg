@@ -296,8 +296,9 @@ async function handleBlockedPage(task, kind) {
   const n = task.resetCount;
 
   if (n > 7) {
-    log(kind + ' 已重置 ' + (n - 1) + ' 次仍过不去：这个号先放弃，保存账户（无 token）继续下一个');
-    await finish(task);
+    log(kind + ' 已重置 ' + (n - 1) + ' 次仍过不去：这个号放弃、不写进账户列表，继续下一个');
+    log('（凭据备查：邮箱 ' + task.email + ' / 用户名 ' + task.username + ' / 密码 ' + task.password + '）');
+    await finish(task, { save: false });
     return true;
   }
 
@@ -837,11 +838,14 @@ async function runToken(task) {
 
 // ===== 完成 =====
 
-async function finish(task) {
+// save=false 表示"这个号不要了"：不写进账户列表（避免留一堆没 token 的空号），
+// 但会把邮箱/用户名/密码打进日志 —— 万一账号其实建出来了，用户还能手动登进去。
+async function finish(task, { save = true } = {}) {
   task.stage = "done";
   await setTask(task);
   await send({
     type: "done",
+    save,
     account: {
       email: task.email,
       username: task.username,
@@ -849,7 +853,7 @@ async function finish(task) {
       token: task.tokenValue || "",
     },
   });
-  log("🎉 注册成功！账户已保存");
+  log(save ? "🎉 注册成功！账户已保存" : "🗑️ 这个号不保存（已把凭据打进日志）");
 }
 
 // ===== 入口 =====

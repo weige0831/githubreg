@@ -346,25 +346,29 @@ async function cleanupBeforeNext({ openGithub = true } = {}) {
 }
 
 // 一个注册完成：保存 + 清理 + 开下一个（提示音不阻塞）
-async function onRegistrationDone(account) {
+async function onRegistrationDone(account, { save = true } = {}) {
   // 先把之前失败的补导入（保证备注顺序与注册顺序一致），再导入本次账户；
   // 导入过程出任何问题都不能影响账户保存
   let gam = {};
-  try {
-    await flushPendingImports();
-    gam = await importWithRetry(account);
-  } catch (e) {
-    notify("导入管理器异常: " + String(e.message || e));
-  }
+  if (save) {
+    try {
+      await flushPendingImports();
+      gam = await importWithRetry(account);
+    } catch (e) {
+      notify("导入管理器异常: " + String(e.message || e));
+    }
 
-  // 关了「保存到本地」时：只有确实进了管理器的账户才不留副本，
-  // 没进管理器（没 token / 导入失败 / 配置没填）的一律本地留一份，避免直接丢号
-  const cfg = await getGamConfig();
-  if (!cfg.saveLocal && gam.ok) {
-    notify("（已导入管理器，按设置不在本地留副本）");
+    // 关了「保存到本地」时：只有确实进了管理器的账户才不留副本，
+    // 没进管理器（没 token / 导入失败 / 配置没填）的一律本地留一份，避免直接丢号
+    const cfg = await getGamConfig();
+    if (!cfg.saveLocal && gam.ok) {
+      notify("（已导入管理器，按设置不在本地留副本）");
+    } else {
+      await saveAccount({ ...account, gamGroup: gam.group || "", gamNote: gam.note || "" });
+      if (!cfg.saveLocal) notify("⚠️ 这次没进管理器，已在本地保留副本（防丢号）");
+    }
   } else {
-    await saveAccount({ ...account, gamGroup: gam.group || "", gamNote: gam.note || "" });
-    if (!cfg.saveLocal) notify("⚠️ 这次没进管理器，已在本地保留副本（防丢号）");
+    notify("🗑️ 这个号按要求丢弃（不写账户列表、不进管理器）");
   }
 
   const queue = await getQueue();
@@ -764,7 +768,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "done": {
-        await onRegistrationDone(msg.account);
+        await onRegistrationDone(msg.account, { save: msg.save !== false });
         sendResponse({ ok: true });
         break;
       }
