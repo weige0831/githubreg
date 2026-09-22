@@ -34,6 +34,11 @@ globalThis.chrome = {
   sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
   offscreen: { createDocument: async () => {} },
   notifications: { create: async () => {} },
+  alarms: {
+    create: async () => {},
+    clear: async () => {},
+    onAlarm: { addListener: () => {} },
+  },
   tabs: {
     create: async () => { calls.push("tabs.create"); return { id: 1 }; },
     remove: async () => { calls.push("tabs.remove"); },
