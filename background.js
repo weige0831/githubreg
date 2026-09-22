@@ -743,6 +743,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "start": {
         try {
           const count = Math.max(1, Math.min(MAX_BATCH, parseInt(msg.count, 10) || 1));
+          // 上次如果点过「停止」，这里要先把这个标记清掉，否则重写开始会被它挡住
+          const { task: prevTask } = await chrome.storage.session.get("task");
+          if (prevTask && prevTask.stopped) {
+            await chrome.storage.session.set({ task: { ...prevTask, stopped: false } });
+            notify("▶️ 重新开始（已清除上次的停止标记）");
+          }
           await setQueue({ total: count, left: count - 1 });
           // 开跑前先清一遍环境：上一批（或上次浏览）留下的 GitHub 登录态会让第一个号卡在首页
           notify("🧹 先清理环境：清除 GitHub 登录态 + 关掉多余标签页...");

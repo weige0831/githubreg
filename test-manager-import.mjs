@@ -604,7 +604,7 @@ api.mailFailTimes = 1; // 第一次建邮箱失败，之后成功
 logs.length = 0;
 const started29 = await send({ type: "start", count: 2 });
 check("邮局首次失败会自动重试并成功开号", started29.ok && !!started29.email, JSON.stringify(started29).slice(0, 80));
-check("日志里有重试提示", logs.some((l) => /开新号失败（1\/3）/.test(l)), logs.filter((l) => /开新号/.test(l)).join(" | ").slice(0, 90));
+check("日志里有重试提示（且说明不会中断）", logs.some((l) => /开新号失败（第 1 次）/.test(l) && /不会中断/.test(l)), logs.filter((l) => /开新号/.test(l)).join(" | ").slice(0, 90));
 api.mailFailTimes = 0;
 
 // 用例 30：换节点后是导航到干净的 GET 地址，不用 chrome.tabs.reload（会弹"确认重新提交表单"）
@@ -721,6 +721,32 @@ check("换节点在清会话之前（先换 IP 再清会话）",
   src35.indexOf("clash_switch") < src35.indexOf("clear_github_session"), "");
 check("清会话路径不再调用丢弃（无上限重试）", !/finish\(task, \{ save: false \}\)/.test(src35), "");
 check("每 7 次报一次进度与凭据", /\(n - 1\) % 7 === 0/.test(src35) && /凭据/.test(src35), "");
+
+// 用例 37：中途停止（不再开新号）+ 页面侧自动重试停下
+api.mailFailTimes = 0;
+const started37 = await send({ type: "start", count: 3 });
+check("先正常开一批", started37.ok === true, "");
+const q37a = (await send({ type: "get_queue" })).queue;
+check("批量队列在跑", !!q37a && q37a.total === 3, JSON.stringify(q37a));
+const stopped = await send({ type: "stop" });
+check("停止指令生效", stopped.ok === true, JSON.stringify(stopped));
+check("队列被清空（不会再开新号）", (await send({ type: "get_queue" })).queue === null, "");
+const t37 = (await send({ type: "get_task" })).task;
+check("当前任务被打上停止标记（页面脚本据此停手）", !!t37 && t37.stopped === true, JSON.stringify(t37 && t37.stopped));
+check("日志说明怎么恢复", logs.some((l) => /已停止/.test(l) && /开始注册/.test(l)), logs.filter((l) => /已停止/.test(l)).slice(-1)[0] || "");
+
+// 用例 38：开着批量时再点开始 = 重写开始（队列重置，任务不带停止标记）
+const restarted = await send({ type: "start", count: 2 });
+const t38 = (await send({ type: "get_task" })).task;
+check("重新开始会重置队列", restarted.ok && (await send({ type: "get_queue" })).queue.total === 2, "");
+check("新任务没有停止标记（自动重试恢复工作）", !t38.stopped, JSON.stringify(t38.stopped));
+
+// 用例 39（静态不变式）：开新号失败不限次数、且会检查停止标记
+const bg39 = fs.readFileSync("background.js", "utf8");
+check("开新号重试没有次数上限", /async function startOneWithRetry\(extra = \{\}\)/.test(bg39) && /for \(;;\)/.test(bg39), "");
+check("重试循环检查停止标记", /task\.stopped\) throw new Error\("已停止/.test(bg39), "");
+check("连续失败会换节点再试", /fails % 3 === 0/.test(bg39) && /开新号连续失败，换节点重试/.test(bg39), "");
+check("等待时间封顶 60 秒（不会越等越离谱）", /Math\.min\(60, 5 \* Math\.min\(fails, 12\)\)/.test(bg39), "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
