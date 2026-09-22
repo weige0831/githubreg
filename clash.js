@@ -22,6 +22,17 @@ const CLASH_DEFAULT = {
 
 const CLASH_ALARM = "clash-health";
 
+// 常见的外部控制地址：Clash Verge（Rev）默认 9097 且带随机密钥；
+// Clash for Windows / Mihomo / 原版 Clash 常见 9090。连不上时挨个探一遍。
+const CLASH_CANDIDATES = [
+  "http://127.0.0.1:9090",
+  "http://127.0.0.1:9097",
+  "http://127.0.0.1:9091",
+  "http://127.0.0.1:9098",
+  "http://127.0.0.1:9099",
+  "http://127.0.0.1:63443",
+];
+
 async function getClashConfig() {
   const { clashConfig } = await chrome.storage.local.get("clashConfig");
   return { ...CLASH_DEFAULT, ...(clashConfig || {}) };
