@@ -476,6 +476,33 @@ for (let i = 0; i < 6; i++) {
 check("可换节点用完后明确失败", !!last && !last.ok && /没有可换的节点/.test(last.error || ""), String(last && last.error));
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
+// 用例 21：Clash Verge 场景——地址填错（9090 没开）+ 需要密钥（9097）
+api.clashDeadPorts = new Set(["9090"]);
+api.clashSecretPorts = new Set(["9097"]);
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "", group: "" } });
+const probe1 = await send({ type: "clash_test" });
+check("地址不通时会自动探测并指出正确端口", !probe1.ok && !!probe1.probe && probe1.probe.found === "http://127.0.0.1:9097",
+  `探测到 ${probe1.probe && probe1.probe.found}`);
+check("没填密钥时明确提示「需要密钥」（而不是含糊的连不上）",
+  !!probe1.probe && probe1.probe.needSecret === true && probe1.probe.wrongSecret === false,
+  JSON.stringify({ needSecret: probe1.probe && probe1.probe.needSecret }));
+
+// 用例 22：填对地址 + Verge 的密钥 → 正常读到节点
+await send({ type: "clash_set_config", config: { baseUrl: "http://127.0.0.1:9097", secret: "verge-secret" } });
+api.clashNow = "HK-01";
+api.clashDelays = { "HK-01": 420 };
+const verge = await send({ type: "clash_test" });
+check("Clash Verge（9097 + 密钥）能正常连上", verge.ok && verge.node === "HK-01" && verge.delay === 420,
+  `节点 ${verge.node} 延迟 ${verge.delay}`);
+
+// 用例 23：地址对但密钥写错 → 提示密钥不对，而不是让人去查端口
+await send({ type: "clash_set_config", config: { secret: "wrong-secret" } });
+const probe2 = await send({ type: "clash_test" });
+check("密钥写错时提示密钥不对", !probe2.ok && !!probe2.probe && probe2.probe.wrongSecret === true
+  && probe2.probe.needSecret === false, JSON.stringify({ wrongSecret: probe2.probe && probe2.probe.wrongSecret }));
+
+await send({ type: "clash_set_config", config: { enabled: false, baseUrl: "http://127.0.0.1:9090", secret: "", clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
