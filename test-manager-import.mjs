@@ -413,6 +413,52 @@ check("换邮箱不消耗批次名额", JSON.stringify(queueAfter17) === JSON.st
 check("新任务是全新起点（stage=start，有邮箱密码）",
   taskAfter17.stage === "start" && !!taskAfter17.email && !!taskAfter17.password, JSON.stringify({ stage: taskAfter17.stage, email: taskAfter17.email }));
 
+// 用例 18：Clash 换节点（GitHub 限流时触发）
+await send({ type: "clash_set_config", config: { enabled: false } });
+const offSwitch = await send({ type: "clash_switch", reason: "未启用时" });
+check("未启用时不碰 Clash", !offSwitch.ok && api.clashRequests === 0, `请求数 ${api.clashRequests}`);
+
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", group: "" } });
+api.clashNow = "HK-01";
+api.clashDelays = { "JP-02": 320, "SG-03": 800, "US-04": null };
+api.clashSwitches.length = 0;
+const sw = await send({ type: "clash_switch", reason: "GitHub 限流" });
+check("换节点成功并挑最快的候选", sw.ok && sw.to === "JP-02" && api.clashNow === "JP-02", `${sw.from} → ${sw.to}（延迟 ${sw.delay}）`);
+check("换节点写进了 Clash（PUT 分组）", api.clashSwitches.some((s) => s.name === "JP-02" && s.group === api.clashGroup), JSON.stringify(api.clashSwitches));
+check("旧节点被拉黑（默认 10 分钟）", (await send({ type: "clash_get_status" })).status.blacklistCount === 1,
+  `黑名单 ${(await send({ type: "clash_get_status" })).status.blacklistCount} 个`);
+
+api.clashDelays = { "SG-03": 500, "US-04": 700, "HK-01": 100 };
+const sw2 = await send({ type: "clash_switch", reason: "再换一次" });
+check("拉黑中的节点不会再被选中（哪怕它最快）", sw2.ok && sw2.to === "SG-03", `换到 ${sw2.to}`);
+
+await send({ type: "clash_set_config", config: { clearBlacklist: true } });
+check("清空黑名单生效", (await send({ type: "clash_get_status" })).status.blacklistCount === 0, "");
+
+// 用例 19：健康检查（太慢就换、够快就不动）
+api.clashNow = "HK-01";
+api.clashDelays = { "HK-01": 300 };
+const test19 = await send({ type: "clash_test" });
+check("测试连接返回当前节点与延迟", test19.ok && test19.node === "HK-01" && test19.delay === 300,
+  `节点 ${test19.node} 延迟 ${test19.delay} 共 ${test19.total} 个`);
+const hcFast = await send({ type: "clash_health" });
+check("节点够快就不换", hcFast.ok && !hcFast.switched && hcFast.delay === 300, `延迟 ${hcFast.delay}`);
+
+api.clashDelays = { "HK-01": 9000, "JP-02": 400 };
+const hcSlow = await send({ type: "clash_health" });
+check("超过阈值（5000ms）自动换掉", hcSlow.ok && hcSlow.switched && hcSlow.to === "JP-02", `换到 ${hcSlow.to}`);
+check("太慢的节点被拉黑", (await send({ type: "clash_get_status" })).status.blacklistCount >= 1, "");
+
+// 用例 20：候选都拉黑之后要明确失败，而不是静默乱换
+api.clashDelays = { "JP-02": 200, "SG-03": 210, "US-04": 220, "HK-01": 230 };
+let last = null;
+for (let i = 0; i < 6; i++) {
+  last = await send({ type: "clash_switch", reason: "把候选用完" });
+  if (!last.ok) break;
+}
+check("可换节点用完后明确失败", !!last && !last.ok && /没有可换的节点/.test(last.error || ""), String(last && last.error));
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
