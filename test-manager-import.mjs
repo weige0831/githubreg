@@ -77,6 +77,36 @@ globalThis.fetch = async (url, opts = {}) => {
   const json = (status, obj) => ({ ok: status < 400, status, json: async () => obj, text: async () => JSON.stringify(obj) });
   const bad = (message) => json(400, { code: 400, error: "bad_request", message });
 
+  // ---- 假的 Clash 控制器（external-controller，不走管理器的鉴权）----
+  if (/^https?:\/\/127\.0\.0\.1:\d+\/proxies/.test(full)) {
+    api.clashRequests++;
+    if (path === "/proxies") {
+      return json(200, {
+        proxies: {
+          [api.clashGroup]: { type: "Selector", now: api.clashNow, all: [...api.clashNodes] },
+          DIRECT: { type: "Direct", now: "", all: [] },
+        },
+      });
+    }
+    const delayMatch = path.match(/^\/proxies\/([^/]+)\/delay/);
+    if (delayMatch) {
+      const node = decodeURIComponent(delayMatch[1]);
+      const d = api.clashDelays[node];
+      if (d == null) return json(200, { message: "An error occurred in the delay test" });
+      return json(200, { delay: d });
+    }
+    const groupMatch = path.match(/^\/proxies\/([^/]+)$/);
+    if (groupMatch) {
+      if (opts.method === "PUT") {
+        api.clashNow = body.name;
+        api.clashSwitches.push({ group: decodeURIComponent(groupMatch[1]), name: body.name });
+        return json(200, {});
+      }
+      return json(200, { type: "Selector", now: api.clashNow, all: [...api.clashNodes] });
+    }
+    return json(404, { message: "not found" });
+  }
+
   // ---- 邮局（临时邮箱）----
   if (path.startsWith("/api/v1/")) {
     api.mailCalls.push({ path, body, host });
