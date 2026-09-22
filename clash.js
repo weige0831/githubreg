@@ -192,18 +192,24 @@ async function clashHealthCheck(trigger = "定时检查") {
   }
 }
 
-// 换完节点刷新当前任务的标签页，页面脚本重新跑一遍流程就能继续
+// 换完节点让页面重新开始。
+// 不能用 chrome.tabs.reload()：注册表单提交后的页面是 POST 结果页，reload 会弹
+// 「确认重新提交表单」对话框，把自动化卡住等人点（实测踩到过）。
+// 改成导航到一个干净的 GET 地址，页面脚本会按 stage 自己接着往下走。
 async function reloadTaskTab(reason) {
   try {
     const { task } = await chrome.storage.session.get("task");
-    if (task && task.tabId) {
-      await chrome.tabs.reload(task.tabId);
-      notify(`🔄 已刷新页面（${reason}）`);
-      return true;
+    if (!task || !task.tabId) {
+      notify("没有找到当前任务的标签页，没重新打开");
+      return false;
     }
-    notify("没有找到当前任务的标签页，没刷新");
+    // token 阶段回首页即可（首页会自己跳 token 创建页）；其它阶段回注册页重填
+    const url = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
+    await chrome.tabs.update(task.tabId, { url });
+    notify(`🔄 已重新打开 ${url}（${reason}）`);
+    return true;
   } catch (e) {
-    notify("刷新页面失败：" + String(e));
+    notify("重新打开页面失败：" + String(e));
   }
   return false;
 }

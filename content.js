@@ -264,22 +264,42 @@ async function runFill(task) {
   log("等待 GitHub 验证码...");
 }
 
-// 检测到限流：拉黑当前节点 + 换一个 + 刷新页面（同一任务最多换 3 次，避免在限流页反复刷）
+// 检测到限流：拉黑当前节点 → 换一个 → 重新打开页面接着跑。
+// 同一任务连着换 3 次还在限流，就等一会儿再来一轮（等待时间逐轮加长，最多 30 分钟），
+// 全都自动进行，不需要人手刷新。限流是按 IP 的，换节点 + 等待是唯一有效的组合。
 async function handleRateLimit(task) {
   task.clashSwitches = (task.clashSwitches || 0) + 1;
   await setTask(task);
+
   if (task.clashSwitches > 3) {
-    log("已连续换 3 次节点仍在限流，先停手等一会儿（手动刷新页面会继续）");
-    return false;
+    task.clashRounds = (task.clashRounds || 0) + 1;
+    const waitMin = Math.min(30, 5 * task.clashRounds);
+    log(`已连续换 3 个节点仍被限流，等 ${waitMin} 分钟后自动再来一轮（第 ${task.clashRounds} 轮，不用手动操作）`);
+    await setTask(task);
+    await sleep(waitMin * 60000);
+    task.clashSwitches = 0;
+    await setTask(task);
+    log("等待结束，自动继续重试...");
   }
-  log(`🚦 检测到 GitHub 限流，换节点后刷新重试（第 ${task.clashSwitches} 次）...`);
+
+  log(`🚦 检测到 GitHub 限流，换节点后重新打开页面（本轮第 ${task.clashSwitches} 次）...`);
   const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true });
+
   if (r && r.ok) {
-    log("已换节点" + (r.to ? `（${r.from || "?"} → ${r.to}）` : "") + "，页面刷新后继续");
-    return true;
+    if (r.reloaded) {
+      log("已换节点" + (r.to ? `（${r.from || "?"} → ${r.to}）` : "") + "，页面已重新打开，继续流程");
+      return true;
+    }
+    // 换成功但页面没重新打开（比如标签页没了）：等一下再自己导航一次
+    log("已换节点，但页面没重新打开，3 秒后自己回注册页");
+    await sleep(3000);
+  } else {
+    // 换不了节点（没启用/没可换的）：等 2 分钟再试，别停在这
+    log("换节点没成功：" + ((r && r.error) || "未知原因") + "，2 分钟后自动重试");
+    await sleep(120000);
   }
-  log("没能换节点：" + ((r && r.error) || "Clash 自动切换未启用") + "，等一会儿手动刷新吧");
-  return false;
+  location.href = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
+  return true;
 }
 
 // 盯着页面：限流提示常常是首屏之后才出现的，出现就立刻处理
