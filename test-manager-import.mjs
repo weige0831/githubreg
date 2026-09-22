@@ -649,6 +649,19 @@ await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist:
 
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
+
+// 用例 31：黑名单到期自动解禁（25 分钟是并行倒计时，不是排队累加）
+api.clashNodes = ["HK-01", "JP-02"];
+api.clashNow = "HK-01";
+api.clashDelays = { "JP-02": 120 };
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", clearBlacklist: true } });
+store.local.clashBlacklist = { "JP-02": Date.now() - 1000 }; // 模拟 25 分钟前拉黑、已经到期的节点
+const exp = await send({ type: "clash_switch", reason: "限流", rotate: true, blacklist: false });
+check("到期的节点能重新被选中", exp.ok && exp.to === "JP-02", "换到 " + exp.to);
+check("到期条目会被自动清理", Object.keys(store.local.clashBlacklist || {}).length === 0, JSON.stringify(store.local.clashBlacklist));
+api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
