@@ -261,12 +261,10 @@ async function runFill(task) {
   log("等待 GitHub 验证码...");
 }
 
-// 邮箱已经被注册过。分两种情况：
-//   1) 这个号其实就是我们自己上一轮建出来的（同一任务、同一密码）→ 直接去登录页用原密码登进去，别浪费；
-//   2) 不是我们的（邮箱被回收/撞名）→ 让后台换一个邮箱重开一个注册任务，位置不变。
-// 换邮箱最多 3 次，超过就按「无 token」保存账户收尾，避免这一批卡死在这里。
+// 邮箱已经被注册过：直接换一个新邮箱重开这个位置，不做别的判断。
+// 上限 3 次，超过就按「无 token」保存收尾，避免整批卡死在这一步。
 async function handleEmailTaken(task) {
-  task.emailTaken = true;
+  task.emailTaken = true; // 防止这个任务的注册表单被重复提交（GitHub 只会再报一次同样的错）
   task.recoverAttempts = (task.recoverAttempts || 0) + 1;
   await setTask(task);
   log(`⚠️ 这个邮箱已被注册过（第 ${task.recoverAttempts} 次）：${task.email}`);
@@ -276,8 +274,15 @@ async function handleEmailTaken(task) {
     await finish(task);
     return;
   }
-  log("先试原密码登录：能登上说明这个号是我们自己建的，登不上就换邮箱");
-  location.href = "https://github.com/login";
+
+  log("换一个新邮箱重开（批次名额不消耗）...");
+  const r = await send({ type: "new_account", attempts: task.recoverAttempts });
+  if (r && r.ok) {
+    log("已换新邮箱：" + r.email + "（新标签页已打开，本页会被关掉）");
+  } else {
+    log("换邮箱失败：" + ((r && r.error) || "后台无响应") + "，先保存账户（无 token）");
+    await finish(task);
+  }
 }
 
 // ===== 验证码页：收信 + 填码 =====
@@ -364,10 +369,8 @@ async function runCode(task) {
 
 // ===== 注册成功后自动登录 + 创建 fine-grained token =====
 
-async function autoLogin(task, reason = "注册成功！自动登录中...") {
-  log(reason);
-  task.loginSubmitted = true; // 标记已提交过，之后登录页再报错才判定成「密码不对」
-  await setTask(task);
+async function autoLogin(task) {
+  log("注册成功！自动登录中...");
   const userEl = await waitFor(() => qs("#login_field"), 30000);
   if (!userEl) {
     log("登录页没找到用户名输入框");
@@ -635,22 +638,6 @@ async function finish(task) {
     return;
   }
 
-  // 1.5) 邮箱已被注册过：在登录页用原密码试登
-  if (task.emailTaken && isLogin) {
-    const body = bodyText();
-    // 只有「已经提交过登录」时页面上的报错才算密码不对，否则第一次打开登录页就该先试一次
-    if (task.loginSubmitted && /incorrect|invalid|not match|wrong/.test(body)) {
-      // 密码对不上 = 这个邮箱不是我们建的：换一个邮箱重开，位置不变
-      log("登录失败：这个邮箱不是我们注册的，换一个邮箱重来");
-      task.emailTaken = false;
-      await setTask(task);
-      await send({ type: "new_account", attempts: task.recoverAttempts || 0 });
-      return;
-    }
-    await autoLogin(task, "用原密码尝试登录（邮箱已被注册过）...");
-    return;
-  }
-
   // 2) token 创建页
   if (isTokenPage && task.stage === "token") {
     if (task.tokenGenerated) {
@@ -683,10 +670,9 @@ async function finish(task) {
   }
 
   // 3) 注册表单页：填表提交
-  //    邮箱已被注册过的任务不再重复提交（GitHub 只会再报一次同样的错），直接去登录页试原密码
+  //    邮箱已被注册过的任务不再重复提交（GitHub 只会再报一次同样的错），等后台换好新邮箱
   if (hasEmail && task.emailTaken) {
-    log("该任务的邮箱已被注册过，不再重复提交表单，转去登录页");
-    location.href = "https://github.com/login";
+    log("该任务的邮箱已被注册过，等新邮箱开好后继续（本页会被关掉）");
     return;
   }
   if (hasEmail) {
