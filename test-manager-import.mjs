@@ -85,6 +85,7 @@ const api = {
   mailCalls: [],           // 邮局收到的请求 { path, body }
   mailHost: "",
   mailFailTimes: 0, // 让前 N 次建邮箱失败，用来测重试
+  mailListFailTimes: 0, // 让收件箱列表接口失败 N 次（测邮局连不上时的换节点）
   // ---- 假的 Clash 控制器 ----
   clashSwitches: [],       // 每次 PUT /proxies/{group} 记录 { group, name }
   clashDelays: {},         // 节点 -> 延迟；null/未设置 = 测不通
@@ -160,6 +161,7 @@ globalThis.fetch = async (url, opts = {}) => {
       return json(200, { email, token: "mail-token-1" });
     }
     if (path === "/api/v1/mail-token-1/emails") {
+      if (api.mailListFailTimes > 0) { api.mailListFailTimes--; throw new TypeError("fetch failed"); }
       return json(200, { emails: [{ id: 7, subject: "Your GitHub launch code", from_address: "noreply@github.com" }] });
     }
     if (path === "/api/v1/mail-token-1/emails/7") {
@@ -747,6 +749,29 @@ check("开新号重试没有次数上限", /async function startOneWithRetry\(ex
 check("重试循环检查停止标记", /task\.stopped\) throw new Error\("已停止/.test(bg39), "");
 check("连续失败会换节点再试", /fails % 3 === 0/.test(bg39) && /开新号连续失败，换节点重试/.test(bg39), "");
 check("等待时间封顶 60 秒（不会越等越离谱）", /Math\.min\(60, 5 \* Math\.min\(fails, 12\)\)/.test(bg39), "");
+
+// 用例 40：邮局连不上 → 换节点重试（邮局也经 Clash 转发）
+api.clashNodes = ["HK-01", "JP-02", "SG-03"];
+api.clashNow = "HK-01";
+api.clashDelays = {};
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", clearBlacklist: true } });
+api.clashSwitches.length = 0;
+api.mailListFailTimes = 99; // 邮局列表接口一直连不上
+await send({ type: "request_code", token: "mail-token-1", timeoutMs: 700 });
+check("邮局连不上时会换节点", api.clashSwitches.length >= 1, JSON.stringify(api.clashSwitches));
+check("换节点日志写明原因", logs.some((l) => /邮局连续 .* 次连不上/.test(l)), logs.filter((l) => /邮局连续/.test(l)).slice(-1)[0] || "");
+api.mailListFailTimes = 0;
+
+// 用例 41：管理器连不上 → 换节点再试一次，仍失败才入队
+api.clashSwitches.length = 0;
+api.down = true;
+const pend41 = (await send({ type: "gam_get_status" })).status.pending;
+await send({ type: "done", account: { ...acct(41), token: "key_valid_41" } });
+check("管理器连不上时会换节点重试", api.clashSwitches.length >= 1, JSON.stringify(api.clashSwitches));
+check("换节点后仍失败才进待重试队列", (await send({ type: "gam_get_status" })).status.pending === pend41 + 1, "pending " + pend41 + " → " + (await send({ type: "gam_get_status" })).status.pending);
+check("日志写明换了节点再试", logs.some((l) => /连续失败：换个节点再试一次/.test(l)), logs.filter((l) => /换个节点再试/.test(l)).slice(-1)[0] || "");
+api.down = false;
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
