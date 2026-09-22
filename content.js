@@ -635,6 +635,24 @@ async function finish(task) {
 
   log(`页面加载: ${location.pathname}（表单=${hasEmail} 验证码框=${hasCodeInput} 验证页=${isVerification} 首页=${hasSignup} token页=${isTokenPage}）`);
 
+  // 0) GitHub 限流：换节点 + 刷新页面，然后继续（最多换 3 次，避免一直刷）
+  if (RATE_LIMIT_RE.test(document.body.innerText)) {
+    task.clashSwitches = (task.clashSwitches || 0) + 1;
+    await setTask(task);
+    if (task.clashSwitches > 3) {
+      log("已连续换 3 次节点仍在限流，先停手等一会儿（手动刷新页面会继续）");
+      return;
+    }
+    log(`🚦 检测到 GitHub 限流，换节点后刷新重试（第 ${task.clashSwitches} 次）...`);
+    const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true });
+    if (r && r.ok) {
+      log("已换节点" + (r.to ? `（${r.from || "?"} → ${r.to}）` : "") + "，页面刷新后继续");
+    } else {
+      log("没能换节点：" + ((r && r.error) || "Clash 自动切换未启用") + "，等一会儿手动刷新吧");
+    }
+    return;
+  }
+
   // 1) 注册成功落地：登录页提示 created successfully -> 自动登录
   if (isLogin && bodyText().includes("created successfully")) {
     await autoLogin(task);
