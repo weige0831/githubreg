@@ -16,6 +16,9 @@ const CODE_INPUT_SEL =
 const EMAIL_TAKEN_RE =
   /already associated|already registered|already been taken|already taken|invalid email/i;
 
+// GitHub 限流（429）的几种页面提示
+const RATE_LIMIT_RE = /too many (requests|attempts)|rate limit|whoa there|try again (in|later)/i;
+
 // ===== 创建 token 页面 =====
 // classic token 页：scopes 由 URL 参数预勾选，页面只需填 Note -> 选 No expiration -> Generate
 const TOKEN_SCOPES = [
