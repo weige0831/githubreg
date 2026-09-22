@@ -264,6 +264,37 @@ async function runFill(task) {
   log("等待 GitHub 验证码...");
 }
 
+// 检测到限流：拉黑当前节点 + 换一个 + 刷新页面（同一任务最多换 3 次，避免在限流页反复刷）
+async function handleRateLimit(task) {
+  task.clashSwitches = (task.clashSwitches || 0) + 1;
+  await setTask(task);
+  if (task.clashSwitches > 3) {
+    log("已连续换 3 次节点仍在限流，先停手等一会儿（手动刷新页面会继续）");
+    return false;
+  }
+  log(`🚦 检测到 GitHub 限流，换节点后刷新重试（第 ${task.clashSwitches} 次）...`);
+  const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true });
+  if (r && r.ok) {
+    log("已换节点" + (r.to ? `（${r.from || "?"} → ${r.to}）` : "") + "，页面刷新后继续");
+    return true;
+  }
+  log("没能换节点：" + ((r && r.error) || "Clash 自动切换未启用") + "，等一会儿手动刷新吧");
+  return false;
+}
+
+// 盯着页面：限流提示常常是首屏之后才出现的，出现就立刻处理
+function watchRateLimit(task) {
+  if (window.__ghAutoRegRateLimitWatch) return;
+  window.__ghAutoRegRateLimitWatch = true;
+  let ticks = 0;
+  const timer = setInterval(async () => {
+    if (++ticks > 18) return clearInterval(timer); // 最多盯 90 秒
+    if (!RATE_LIMIT_RE.test(document.body.innerText)) return;
+    clearInterval(timer);
+    await handleRateLimit(task);
+  }, 5000);
+}
+
 // 邮箱已经被注册过：直接换一个新邮箱重开这个位置，不做别的判断。
 // 上限 3 次，超过就按「无 token」保存收尾，避免整批卡死在这一步。
 async function handleEmailTaken(task) {
