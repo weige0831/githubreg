@@ -58,6 +58,13 @@ const api = {
   keysCreated: [],         // 通过 POST /apikeys 建出来的 key
   mailCalls: [],           // 邮局收到的请求 { path, body }
   mailHost: "",
+  // ---- 假的 Clash 控制器 ----
+  clashSwitches: [],       // 每次 PUT /proxies/{group} 记录 { group, name }
+  clashDelays: {},         // 节点 -> 延迟；null/未设置 = 测不通
+  clashNodes: ["HK-01", "JP-02", "SG-03", "US-04"],
+  clashNow: "HK-01",
+  clashGroup: "🚀 节点选择",
+  clashRequests: 0,
 };
 globalThis.fetch = async (url, opts = {}) => {
   const full = String(url);
