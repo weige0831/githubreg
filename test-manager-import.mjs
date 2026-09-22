@@ -190,7 +190,7 @@ globalThis.fetch = async (url, opts = {}) => {
       if (opts.method === "PUT") {
         api.clashNow = body.name;
         api.clashSwitches.push({ group: decodeURIComponent(groupMatch[1]), name: body.name });
-        return json(204 === 204 ? 200 : 200, {});
+        return json(200, {});
       }
       return json(200, { type: "Selector", now: api.clashNow, all: [...api.clashNodes] });
     }

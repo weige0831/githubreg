@@ -792,6 +792,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
       }
+      case "clash_health": {
+        // 手动触发一次节点健康检查（太慢/测不通就换，逻辑与定时检查一致）
+        sendResponse({ ok: true, ...(await clashHealthCheck("手动检查")), status: await clashStatus() });
+        break;
+      }
       case "clash_switch": {
         // 手动换，或页面脚本检测到 GitHub 限流时触发（reload=true 表示换完刷新当前页面）
         const r = await clashSwitch(msg.reason || "手动切换");
