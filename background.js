@@ -774,8 +774,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "clash_test": {
         // 连一下控制器，报告当前节点与延迟；连不上/密钥不对就顺手探一遍常见地址
+        let cfg = null;
         try {
-          const cfg = await getClashConfig();
+          cfg = await getClashConfig();
           const group = await clashPickGroup(cfg);
           const info = await clashRequest(`/proxies/${encodeURIComponent(group)}`);
           const node = (info && info.now) || "";
@@ -789,11 +790,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           });
         } catch (e) {
           const error = String(e.message || e);
+          const permitted = cfg ? await originPermitted(cfg.baseUrl) : true;
           let probe = null;
-          try {
-            probe = await clashProbe();
-          } catch (e2) {}
-          sendResponse({ ok: false, error, probe });
+          // 没授权的话探测也全是失败，没必要浪费时间
+          if (permitted) {
+            try {
+              probe = await clashProbe();
+            } catch (e2) {}
+          }
+          sendResponse({ ok: false, error, permitted, probe });
         }
         break;
       }
