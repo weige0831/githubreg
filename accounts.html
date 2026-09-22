@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>账户管理 - GitHub 自动注册</title>
+  <link rel="stylesheet" href="accounts.css" />
+</head>
+<body>
+  <header>
+    <h1>📒 账户管理</h1>
+    <span id="count" class="badge">共 0 个</span>
+    <div class="header-actions">
+      <button id="exportBtn">导出全部</button>
+      <button id="clearBtn" class="danger">清空</button>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <table id="table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>邮箱</th>
+          <th>用户名</th>
+          <th>密码</th>
+          <th>Token</th>
+          <th>管理器分组</th>
+          <th>管理器备注</th>
+          <th>注册时间</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+    <div id="empty" class="empty hidden">暂无账户，去扩展面板点「开始注册」吧 🚀</div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="accounts.js"></script>
+</body>
+</html>

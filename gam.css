@@ -1,0 +1,126 @@
+/* 管理器导入区块（popup 与侧边栏面板共用，配色沿用面板深色主题） */
+
+.gam {
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.gam > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #161b22;
+  border-bottom: 1px solid transparent;
+  font-size: 12px;
+  color: #8b949e;
+  cursor: pointer;
+  list-style: none;
+}
+
+.gam > summary::-webkit-details-marker {
+  display: none;
+}
+
+.gam[open] > summary {
+  border-bottom-color: #30363d;
+}
+
+.gam[open] > summary::after {
+  content: "▴";
+  font-size: 10px;
+}
+
+.gam-state {
+  color: #58a6ff;
+  font-size: 11px;
+  text-align: right;
+}
+
+.gam-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.gam-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #8b949e;
+  white-space: nowrap;
+}
+
+.gam-row input[type="text"],
+.gam-row input[type="password"] {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #e6edf3;
+  font-size: 12px;
+}
+
+.gam-row input[type="number"] {
+  width: 56px;
+  padding: 4px 6px;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  background: #0d1117;
+  color: #e6edf3;
+  font-size: 12px;
+  text-align: center;
+}
+
+.gam-row input:focus {
+  outline: none;
+  border-color: #1f6feb;
+}
+
+.gam-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.gam-actions button {
+  flex: 1;
+  padding: 6px 0;
+  background: #30363d;
+  color: #e6edf3;
+  font-size: 12px;
+}
+
+.gam-actions button:hover {
+  background: #3d444d;
+}
+
+.gam-hint {
+  font-size: 11px;
+  color: #6e7681;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.gam-msg {
+  min-height: 14px;
+  font-size: 11px;
+  color: #8b949e;
+  line-height: 1.4;
+  word-break: break-all;
+  white-space: normal;
+}
+
+.gam-msg.ok {
+  color: #3fb950;
+}
+
+.gam-msg.err {
+  color: #f85149;
+}

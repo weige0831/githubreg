@@ -1,0 +1,14 @@
+# 本地配置与密钥（不要提交）
+.zcode/
+*.local.js
+github-token.txt
+.env
+
+# 临时文件
+.tmp-*
+tmp/
+node_modules/
+
+# 编辑器
+.vscode/
+.idea/

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>GitHub 自动注册 - 常驻面板</title>
+  <link rel="stylesheet" href="panel.css" />
+  <link rel="stylesheet" href="gam.css" />
+</head>
+<body>
+  <header>
+    <h1>🚀 GitHub 自动注册</h1>
+    <span id="count" class="badge">0 个账户</span>
+  </header>
+
+  <section class="actions">
+    <button id="startBtn" class="primary">开始注册</button>
+    <div class="batch">
+      <label for="countInput">连续</label>
+      <input id="countInput" type="number" min="1" max="10" value="1" />
+      <label>个</label>
+    </div>
+  </section>
+
+  <section class="sub-actions">
+    <button id="manageBtn">📒 管理账户</button>
+    <button id="exportBtn">📥 导出</button>
+  </section>
+
+  <div id="queueBar" class="queue hidden">
+    <div class="queue-text">⏳ 批量进行中：<span id="queueText">0/0</span></div>
+    <div class="bar"><div id="queueFill" class="fill"></div></div>
+  </div>
+
+  <section id="info" class="info hidden"></section>
+
+  <details id="gamBox" class="gam">
+    <summary>
+      <span>📥 导入管理器</span>
+      <span id="gamState" class="gam-state">读取中...</span>
+    </summary>
+    <div class="gam-body">
+      <label class="gam-row">
+        <input id="gamEnabled" type="checkbox" />
+        <span>注册成功自动导入管理器</span>
+      </label>
+      <label class="gam-row"><span>地址</span><input id="gamUrl" type="text" placeholder="http://host:port" /></label>
+      <label class="gam-row"><span>API Key</span><input id="gamApiKey" type="text" placeholder="gam_...（留空则用管理密码）" /></label>
+      <label class="gam-row"><span>管理密码</span><input id="gamPass" type="password" /></label>
+      <label class="gam-row">
+        <span>每组</span>
+        <input id="gamSize" type="number" min="1" max="100" />
+        <span>个（备注 分组名-0 … 分组名-9）</span>
+      </label>
+      <div class="gam-actions">
+        <button id="gamSave">保存</button>
+        <button id="gamTest">测试连接</button>
+      </div>
+      <div class="gam-actions">
+        <button id="gamGenKey">生成 API Key</button>
+        <button id="gamRetry">补导入</button>
+      </div>
+      <div class="gam-hint">填了 API Key 就用 Key 鉴权（长期有效）；管理密码只在生成 Key 或没填 Key 时使用</div>
+      <div id="gamMsg" class="gam-msg"></div>
+    </div>
+  </details>
+
+  <details id="mailBox" class="gam">
+    <summary>
+      <span>📧 临时邮箱</span>
+      <span id="mailState" class="gam-state">读取中...</span>
+    </summary>
+    <div class="gam-body">
+      <label class="gam-row"><span>邮局地址</span><input id="mailUrl" type="text" placeholder="https://你的邮局地址" /></label>
+      <label class="gam-row"><span>邮箱域名</span><input id="mailDomain" type="text" placeholder="你的收信域名" /></label>
+      <div class="gam-actions">
+        <button id="mailSave">保存</button>
+        <button id="mailTest">测试建邮箱</button>
+      </div>
+      <div class="gam-hint">注册时用这里的邮局建临时邮箱：邮箱地址 = 随机名 @ 邮箱域名</div>
+      <div id="mailMsg" class="gam-msg"></div>
+    </div>
+  </details>
+
+  <section class="log-box">
+    <div class="log-title">运行日志</div>
+    <div id="log"></div>
+  </section>
+
+  <footer>常驻侧边栏 · 临时邮箱 + 自动填表 + 验证码自动输入</footer>
+
+  <script src="gam-ui.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>
