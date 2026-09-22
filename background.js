@@ -797,6 +797,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
       }
+      case "clash_import_config": {
+        // 面板上让用户选 Clash 的配置文件（扩展本身不读磁盘），这里只负责解析出地址和密钥
+        const info = parseClashConfig(msg.text || "");
+        sendResponse({ ok: !!info.baseUrl, ...info, error: info.baseUrl ? "" : "这份配置里没有 external-controller" });
+        break;
+      }
       case "clash_health": {
         // 手动触发一次节点健康检查（太慢/测不通就换，逻辑与定时检查一致）
         sendResponse({ ok: true, ...(await clashHealthCheck("手动检查")), status: await clashStatus() });
