@@ -773,7 +773,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "clash_test": {
-        // 连一下控制器，报告当前节点与延迟
+        // 连一下控制器，报告当前节点与延迟；连不上/密钥不对就顺手探一遍常见地址
         try {
           const cfg = await getClashConfig();
           const group = await clashPickGroup(cfg);
@@ -788,7 +788,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             total: ((info && info.all) || []).length,
           });
         } catch (e) {
-          sendResponse({ ok: false, error: String(e.message || e) });
+          const error = String(e.message || e);
+          let probe = null;
+          try {
+            probe = await clashProbe();
+          } catch (e2) {}
+          sendResponse({ ok: false, error, probe });
         }
         break;
       }
