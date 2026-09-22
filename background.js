@@ -115,16 +115,43 @@ async function playSuccess() {
 
 // ===== 临时邮箱 API =====
 
+// 统一的 fetch 包装：网络层失败时，先判断是不是「扩展没被授权访问这个地址」。
+// 这种情况 Chrome 直接把请求拦掉，报错只有一句 Failed to fetch，很难看出原因。
+async function fetchWithPermitHint(url, options, what = "") {
+  try {
+    return await fetch(url, options);
+  } catch (e) {
+    let permitted = true;
+    try {
+      permitted = await originPermitted(url);
+    } catch (e2) {}
+    if (!permitted) {
+      let host = url;
+      try {
+        host = new URL(url).hostname;
+      } catch (e3) {}
+      throw new Error(
+        `没被授权访问 ${host}（Chrome 直接拦掉了请求）：去面板对应区块点一下「保存」，弹窗里点「允许」`
+      );
+    }
+    throw new Error(`${what}连不上：${String((e && e.message) || e)}`);
+  }
+}
+
 async function createTempEmail() {
   const { apiUrl, domain } = await getMailConfig();
   if (!trimUrl(apiUrl) || !domain) {
     throw new Error("未配置邮局地址/邮箱域名（面板 → 📧 临时邮箱里填一次并保存）");
   }
-  const resp = await fetch(`${trimUrl(apiUrl)}/api/v1/addresses`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username: "gh_" + randomHex(4), domain }),
-  });
+  const resp = await fetchWithPermitHint(
+    `${trimUrl(apiUrl)}/api/v1/addresses`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "gh_" + randomHex(4), domain }),
+    },
+    "邮局 "
+  );
   if (!resp.ok) throw new Error("创建邮箱失败 HTTP " + resp.status);
   return resp.json(); // { email, token }
 }
