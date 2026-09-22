@@ -50,7 +50,7 @@ async function refreshQueue() {
 
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
-  const count = Math.max(1, Math.min(10, parseInt(countInput.value, 10) || 1));
+  const count = Math.max(1, Math.min(999, parseInt(countInput.value, 10) || 1));
   appendLog(`开始注册（连续 ${count} 个）...`);
   const resp = await chrome.runtime.sendMessage({ type: "start", count });
   if (resp && resp.ok) {

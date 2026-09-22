@@ -250,7 +250,13 @@ async function startOne() {
 
 // ===== 账户间清理：删 GitHub cookie + 留一个标签页 =====
 
-async function cleanupBeforeNext() {
+// 一次最多连续注册多少个（面板/弹窗的输入框上限也用它，别只改一边）
+const MAX_BATCH = 999;
+
+// 清理环境：删掉 GitHub 的 cookie/本地存储 + 只留一个标签页。
+// 批次开始前和每两个账户之间都要清一遍——上一批留下的登录态会让第一个号卡在首页。
+// openGithub=false 时不额外把保留的标签页跳到 github.com（紧接着就要开新标签页时没必要）。
+async function cleanupBeforeNext({ openGithub = true } = {}) {
   // 1) 只清 GitHub 的 cookie 和本地存储，不影响其它网站登录态
   try {
     await chrome.browsingData.remove(
@@ -273,11 +279,13 @@ async function cleanupBeforeNext() {
     notify(`已关闭 ${toClose.length} 个标签页，保留 1 个`);
 
     // 3) 保留的标签页跳 github.com（cookie 已清 = 未登录），等于刷新
-    try {
-      await chrome.tabs.update(kept.id, { url: "https://github.com/" });
-      notify("保留标签页已跳转 github.com（未登录状态）");
-    } catch (e) {
-      notify("保留标签页跳转失败: " + String(e));
+    if (openGithub) {
+      try {
+        await chrome.tabs.update(kept.id, { url: "https://github.com/" });
+        notify("保留标签页已跳转 github.com（未登录状态）");
+      } catch (e) {
+        notify("保留标签页跳转失败: " + String(e));
+      }
     }
   } catch (e) {
     notify("关闭标签页失败: " + String(e));
@@ -595,8 +603,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     switch (msg.type) {
       case "start": {
         try {
-          const count = Math.max(1, Math.min(10, parseInt(msg.count, 10) || 1));
+          const count = Math.max(1, Math.min(MAX_BATCH, parseInt(msg.count, 10) || 1));
           await setQueue({ total: count, left: count - 1 });
+          // 开跑前先清一遍环境：上一批（或上次浏览）留下的 GitHub 登录态会让第一个号卡在首页
+          notify("🧹 先清理环境：清除 GitHub 登录态 + 关掉多余标签页...");
+          await cleanupBeforeNext({ openGithub: false });
+          await sleep(1000);
           const info = await startOne();
           notify(count > 1 ? `开始批量注册：共 ${count} 个` : "开始注册");
           sendResponse({ ok: true, ...info, count });

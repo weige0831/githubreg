@@ -12,6 +12,7 @@ import vm from "node:vm";
 const store = { local: {}, session: {} };
 const listeners = [];
 const logs = [];
+const calls = []; // 记录 chrome API 调用顺序，用来验证「先清理环境，再开新标签页」
 const area = (name) => ({
   get: async (k) => {
     const o = store[name];
@@ -33,8 +34,13 @@ globalThis.chrome = {
   sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
   offscreen: { createDocument: async () => {} },
   notifications: { create: async () => {} },
-  tabs: { create: async () => ({ id: 1 }), remove: async () => {}, query: async () => [], update: async () => {} },
-  browsingData: { remove: async () => {} },
+  tabs: {
+    create: async () => { calls.push("tabs.create"); return { id: 1 }; },
+    remove: async () => { calls.push("tabs.remove"); },
+    query: async () => { calls.push("tabs.query"); return [{ id: 10 }, { id: 11 }]; },
+    update: async () => { calls.push("tabs.update"); },
+  },
+  browsingData: { remove: async () => { calls.push("browsingData.remove"); } },
 };
 
 // ---------- 假的管理器 / 邮局 API ----------
@@ -273,6 +279,21 @@ const st12 = (await send({ type: "gam_get_status" })).status;
 check("生成 API Key 成功", gen.ok && gen.key === "gam_test_key", String(gen.key));
 check("生成的 Key 已自动保存进配置", st12.apiKey === "gam_test_key" && st12.authMode === "API Key", st12.apiKey);
 check("生成 Key 用的是管理密码登录", api.keysCreated.includes("github-auto-reg"), JSON.stringify(api.keysCreated));
+
+// 用例 13：连续数量不再卡在 10；开始前先清理环境
+await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
+calls.length = 0;
+const started = await send({ type: "start", count: 20 });
+const q = (await send({ type: "get_queue" })).queue;
+check("连续 20 个能生效（上限已放开）", started.ok && started.count === 20 && q && q.total === 20,
+  `count=${started.count} queue.total=${q && q.total}`);
+check("开始前清了 GitHub 登录态", calls.includes("browsingData.remove"), calls.join(" → "));
+check("清理发生在开新标签页之前",
+  calls.indexOf("browsingData.remove") !== -1 && calls.indexOf("browsingData.remove") < calls.indexOf("tabs.create"),
+  calls.join(" → "));
+check("清理时关掉了多余标签页", calls.includes("tabs.remove"), calls.join(" → "));
+check("开跑前不额外做一次无用的跳转", !calls.includes("tabs.update"), calls.join(" → "));
+check("超大数量会被夹到上限（防手滑）", (await send({ type: "start", count: 999999 })).count === 999, "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
