@@ -327,6 +327,7 @@ async function onRegistrationDone(account) {
     notify(`✅ 第 ${done}/${queue.total} 个注册完成，清理环境后继续下一个...`);
     try {
       await cleanupBeforeNext(); // 删 GitHub cookie + 留一个标签页
+      await clashHealthCheck("开下一个号之前"); // 节点太慢/不通就先换，免得新号也跑不动
       notify("等待 10 秒后开始下一个账户...");
       await sleep(10000);
       await startOne(); // 先开下一个，缩短间隔
@@ -337,6 +338,7 @@ async function onRegistrationDone(account) {
   } else if (queue) {
     notify(`🎉 批量注册完成：共 ${queue.total} 个`);
     await setQueue(null);
+    stopClashAlarm();
     playSuccess();
   }
 }
