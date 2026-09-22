@@ -675,6 +675,12 @@ check("keepAlive 心跳间隔 15 秒（小于 60 秒阈值）",
 check("看门狗首轮阈值 5 分钟、循环内 1 分钟",
   /task\.rateLimit \? 60000 : 5 \* 60 \* 1000/.test(contentSrc), "");
 
+// 用例 33（静态不变式）：不依赖文字的「结构判断」必须在，阈值是 60 秒（循环内）/ 90 秒（首次）
+check("有 pageLooksBlank 结构判断", /function pageLooksBlank\(\)/.test(contentSrc), "");
+check("结构判断只看流程页", /signup\|login\|account_verifications/.test(contentSrc) && /settings\/tokens/.test(contentSrc), "");
+check("结构异常阈值 60 秒（循环内）/ 90 秒（首次）", /task\.rateLimit \? 12 : 18/.test(contentSrc), "");
+check("没有可操作元素时按拦截处理", /页面异常（没有可操作元素）/.test(contentSrc), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
