@@ -106,7 +106,11 @@ async function clashDelay(node, cfg) {
 }
 
 // 换节点：拉黑当前节点，从没被拉黑的里挑（先测 3 个候选，取最快的）
-async function clashSwitch(reason) {
+// 换节点。
+//   rotate=true ：按分组里的顺序换「下一个」节点（换来换去绕限流用这个，保证每个节点轮到）
+//   rotate=false：测 3 个候选取最快的（手动换、节点太慢时换用这个）
+//   blacklist   ：是否把旧节点拉黑（限流快速重试阶段不拉黑，等过一轮还不行才拉黑）
+async function clashSwitch(reason, { blacklist = true, rotate = false } = {}) {
   const cfg = await getClashConfig();
   if (!cfg.enabled) {
     return {
@@ -135,26 +139,62 @@ async function clashSwitch(reason) {
       return { ok: false, error: err, group, current: now };
     }
 
-    const probes = usable.slice(0, 3);
-    const tested = await Promise.all(
-      probes.map(async (n) => ({ node: n, delay: await clashDelay(n, cfg) }))
-    );
-    const best = tested.filter((t) => t.delay != null).sort((a, b) => a.delay - b.delay)[0];
-    const pick = best ? best.node : probes[0];
+    let pick = "";
+    let picked = null; // { delay }
+    if (rotate) {
+      // 从当前节点往后按顺序取候选（最多 3 个），挑第一个能测通的
+      const start = Math.max(0, all.indexOf(now));
+      const order = [];
+      for (let i = 1; i <= all.length && order.length < 3; i++) {
+        const n = all[(start + i) % all.length];
+        if (n === now || blocked[n]) continue;
+        order.push(n);
+      }
+      for (const n of order) {
+        const d = await clashDelay(n, cfg);
+        if (d != null) {
+          pick = n;
+          picked = { delay: d };
+          break;
+        }
+      }
+      if (!pick) pick = order[0] || "";
+      if (!pick) {
+        notify("⚠️ 往后找不到可用节点");
+        return { ok: false, error: "往后找不到可用节点", group, current: now };
+      }
+    } else {
+      const probes = usable.slice(0, 3);
+      const tested = await Promise.all(
+        probes.map(async (n) => ({ node: n, delay: await clashDelay(n, cfg) }))
+      );
+      const best = tested.filter((t) => t.delay != null).sort((a, b) => a.delay - b.delay)[0];
+      pick = best ? best.node : probes[0];
+      picked = best ? { delay: best.delay } : null;
+    }
 
     await clashRequest(`/proxies/${encodeURIComponent(group)}`, {
       method: "PUT",
       body: { name: pick },
     });
-    if (now) await clashBlacklistAdd(now, cfg.blacklistMinutes);
+    if (blacklist && now) await clashBlacklistAdd(now, cfg.blacklistMinutes);
     notify(
       `🔀 换节点：${now || "?"} → ${pick}` +
-        (best
-          ? `（延迟 ${best.delay}ms，原因：${reason}）`
-          : `（原因：${reason}，候选都测不通，先换上）`)
+        (picked
+          ? `（延迟 ${picked.delay}ms，原因：${reason}）`
+          : `（原因：${reason}，候选都测不通，先换上）`) +
+        (blacklist && now ? `，旧节点拉黑 ${cfg.blacklistMinutes} 分钟` : "")
     );
     // switched 要显式带上：调用方（定时检查）靠它决定要不要刷新页面
-    return { ok: true, switched: true, group, from: now, to: pick, delay: best ? best.delay : null };
+    return {
+      ok: true,
+      switched: true,
+      group,
+      from: now,
+      to: pick,
+      delay: picked ? picked.delay : null,
+      blacklisted: !!(blacklist && now),
+    };
   } catch (e) {
     const msg = String(e.message || e);
     notify("换节点失败：" + msg);
