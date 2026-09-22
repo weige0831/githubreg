@@ -70,6 +70,9 @@ const api = {
   clashNow: "HK-01",
   clashGroup: "🚀 节点选择",
   clashRequests: 0,
+  clashDeadPorts: new Set(),        // 模拟没开的端口
+  clashSecretPorts: new Set(),      // 模拟像 Clash Verge 那样需要密钥的端口
+  clashSecretValue: "verge-secret",
 };
 globalThis.fetch = async (url, opts = {}) => {
   const full = String(url);
