@@ -111,6 +111,14 @@ button {
   flex: 1;
 }
 
+#stopBtn.small {
+  background: #b62324;
+  color: #fff;
+}
+#stopBtn.small:hover {
+  background: #da3633;
+}
+
 button.small {
   flex: 0 0 auto;
   padding: 6px 14px;

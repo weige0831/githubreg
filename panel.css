@@ -208,3 +208,12 @@ footer {
   font-size: 11px;
   color: #8b949e;
 }
+
+#stopBtn {
+  flex: 1;
+  background: #b62324;
+  color: #fff;
+}
+#stopBtn:hover {
+  background: #da3633;
+}

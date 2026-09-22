@@ -285,12 +285,29 @@ function backToFlow(task) {
   location.href = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
 }
 
+// 用户点了「停止」吗？（读最新的 task，不用页面加载时的旧快照）
+async function stoppedNow() {
+  try {
+    const t = await getTask();
+    return !!(t && t.stopped);
+  } catch (e) {
+    return false;
+  }
+}
+
+// 已停止就别再折腾了（换节点/清会话/重开都停手），并说明怎么恢复
+async function bailIfStopped() {
+  if (!(await stoppedNow())) return false;
+  log('⏹ 已停止：自动重试停下（点面板「开始注册」可重新开始）');
+  return true;
+}
 // ===== 「访问暂时受限」/ 卡住 的处理：清 cookie 从头开跑（不走换节点那套）=====
 // 按用户要求：这类页面先重置浏览器会话，再看能不能过去。
 //   · 第 1~3 次：只清 GitHub 会话（cookie + localStorage），然后从首页重开
 //   · 第 4~7 次：连节点一起换（清会话解决不了 IP 层面的判定）
 //   · 超过 7 次：这个号放弃（按「无 token」保存并继续下一个），避免整批卡在一个号上
 async function handleBlockedPage(task, kind) {
+  if (await bailIfStopped()) return false;
   task.resetCount = (task.resetCount || 0) + 1;
   await setTask(task);
   const n = task.resetCount;
@@ -343,6 +360,7 @@ function handleBlocked(task, kind) {
 //   一直到不出现限流为止，全程不需要人工。
 // 注意：每次页面加载只算一次刷新（页面内观察器不会重复计数）。
 async function handleRateLimit(task, kind = "限流") {
+  if (await bailIfStopped()) return false;
   const rl = task.rateLimit || { node: "", refresh: 0, waited: false };
 
   // ① 刚发现限流：直接拉黑当前节点 + 换下一个节点
@@ -488,6 +506,7 @@ function watchRateLimit(task) {
 // 邮箱已经被注册过：直接换一个新邮箱重开这个位置，不做别的判断。
 // 上限 3 次，超过就按「无 token」保存收尾，避免整批卡死在这一步。
 async function handleEmailTaken(task) {
+  if (await bailIfStopped()) return false;
   task.emailTaken = true; // 防止这个任务的注册表单被重复提交（GitHub 只会再报一次同样的错）
   task.recoverAttempts = (task.recoverAttempts || 0) + 1;
   await setTask(task);
@@ -543,6 +562,7 @@ async function fillLaunchCode(code) {
 // 这一个号走不下去了（收不到码 / 码一直无效）：自动回注册页重来，最多 3 次，
 // 之后按「无 token」保存并继续下一个 —— 全自动，不留给人工处理。
 async function retryOrFinish(task, why) {
+  if (await bailIfStopped()) return false;
   task.signupRetries = (task.signupRetries || 0) + 1;
   await setTask(task);
   if (task.signupRetries > 3) {

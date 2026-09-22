@@ -48,6 +48,13 @@ async function refreshQueue() {
   }
 }
 
+stopBtn.addEventListener("click", async () => {
+  const resp = await chrome.runtime.sendMessage({ type: "stop" });
+  appendLog(resp && resp.ok ? "⏹ 已停止：不再开新号（点「开始注册」可重新开始）" : "停止失败", resp && resp.ok ? "" : "err");
+  startBtn.disabled = false;
+  refreshQueue();
+});
+
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
   const count = Math.max(1, Math.min(999, parseInt(countInput.value, 10) || 1));
