@@ -181,7 +181,110 @@ function initMailBox() {
   bgSend("mail_get_status").then((r) => render(r.status));
 }
 
+// ===== 🔀 Clash 自动换节点 =====
+
+function initClashBox() {
+  if (!$id("clashBox")) return;
+  const enabledEl = $id("clashEnabled");
+  const urlEl = $id("clashUrl");
+  const secretEl = $id("clashSecret");
+  const groupEl = $id("clashGroup");
+  const slowEl = $id("clashSlow");
+  const blockEl = $id("clashBlock");
+  const stateEl = $id("clashState");
+  const msgEl = $id("clashMsg");
+
+  function render(s) {
+    if (!s) return;
+    enabledEl.checked = !!s.enabled;
+    urlEl.value = s.baseUrl || "";
+    secretEl.value = s.secret || "";
+    groupEl.value = s.group || "";
+    slowEl.value = s.slowMs || 5000;
+    blockEl.value = s.blacklistMinutes || 10;
+    if (!s.enabled) {
+      stateEl.textContent = "未启用";
+      return;
+    }
+    const parts = [];
+    if (s.error) parts.push("连不上：" + s.error);
+    else parts.push(`当前节点 ${s.current || "?"}`, `分组 ${s.groupUsed || "?"}`);
+    if (s.blacklistCount) parts.push(`黑名单 ${s.blacklistCount} 个`);
+    stateEl.textContent = parts.join(" · ");
+  }
+
+  async function save() {
+    const cfg = {
+      enabled: enabledEl.checked,
+      baseUrl: urlEl.value.trim(),
+      secret: secretEl.value.trim(),
+      group: groupEl.value.trim(),
+      slowMs: Math.max(500, Math.min(60000, parseInt(slowEl.value, 10) || 5000)),
+      blacklistMinutes: Math.max(1, Math.min(1440, parseInt(blockEl.value, 10) || 10)),
+    };
+    if (cfg.enabled) {
+      const perm = await ensureHostPermission(cfg.baseUrl);
+      if (!perm.ok) return { ok: false, error: perm.error };
+    }
+    const r = await bgSend("clash_set_config", { config: cfg });
+    render(r.status);
+    return r;
+  }
+
+  $id("clashSave").addEventListener("click", async () => {
+    const r = await save();
+    uiMsg(msgEl, r.ok ? "已保存" : "保存失败：" + (r.error || "未知错误"), r.ok);
+  });
+
+  $id("clashTest").addEventListener("click", async () => {
+    uiMsg(msgEl, "测试中...");
+    const saved = await save();
+    if (!saved.ok) {
+      uiMsg(msgEl, "保存失败：" + (saved.error || "未知错误"), false);
+      return;
+    }
+    const r = await bgSend("clash_test");
+    if (r.ok) {
+      render({ ...(saved.status || {}), enabled: true, current: r.node, groupUsed: r.group });
+      uiMsg(
+        msgEl,
+        `连接正常：分组「${r.group}」当前节点「${r.node}」，延迟 ${r.delay == null ? "测不通" : r.delay + "ms"}，共 ${r.total} 个节点`,
+        true
+      );
+    } else {
+      uiMsg(msgEl, "连接失败：" + (r.error || "未知错误"), false);
+    }
+  });
+
+  $id("clashSwitch").addEventListener("click", async () => {
+    uiMsg(msgEl, "换节点中...");
+    const saved = await save();
+    if (!saved.ok) {
+      uiMsg(msgEl, "保存失败：" + (saved.error || "未知错误"), false);
+      return;
+    }
+    const r = await bgSend("clash_switch", { reason: "手动切换" });
+    render(r.status);
+    uiMsg(
+      msgEl,
+      r.ok
+        ? `已换到「${r.to}」` + (r.delay != null ? `（延迟 ${r.delay}ms）` : "") + `，旧节点已拉黑`
+        : "换节点失败：" + (r.error || "未知错误"),
+      r.ok
+    );
+  });
+
+  $id("clashClear").addEventListener("click", async () => {
+    const r = await bgSend("clash_set_config", { config: { clearBlacklist: true } });
+    render(r.status);
+    uiMsg(msgEl, "已清空黑名单（节点可以再被选中）", r.ok);
+  });
+
+  bgSend("clash_get_status").then((r) => render(r.status));
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initManagerBox();
   initMailBox();
+  initClashBox();
 });
