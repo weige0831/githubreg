@@ -88,10 +88,8 @@
 
 触发时机：
 
-1. **页面出现 GitHub 限流或人机验证拦截**，按下面的循环自动处理，直到不再出现为止：
-   - 限流页：`too many requests` / `rate limit` / `whoa there` / `try again later` / `请求过多` / `操作过于频繁`
-   - 人机验证页（访问暂时受限）：`访问暂时受限` / `我不是机器人` / `verify you are human` / `temporarily restricted` / `unusual activity`
-     这一页没有表单也没有验证码框，流程本来走不下去，所以和限流一样处理
+1. **页面出现 GitHub 限流**（`too many requests` / `rate limit` / `whoa there` / `try again later` /
+   `请求过多` / `操作过于频繁`），按下面的循环自动处理，直到不再出现为止：
    1. 一出现就**拉黑当前节点并换下一个节点**（按分组顺序换，跳过黑名单里的），页面重新打开；
    2. 在**这个新节点上连续刷新最多 10 次**（每次页面加载算一次，页面内不会重复计数）；
    3. 刷满 10 次还不行 → **等 1 分钟**，在同一节点上再刷 10 次；
