@@ -186,6 +186,11 @@ async function pollForCode(token, timeoutMs = 150000) {
     notify("⚠️ 未配置邮局地址，无法收验证码（面板 → 📧 临时邮箱）");
     return null;
   }
+  if (!(await originPermitted(apiUrl))) {
+    // 没授权的话轮询会一直失败，早点说清楚
+    notify("⚠️ 没被授权访问邮局地址（Chrome 拦了请求）：面板 → 📧 临时邮箱 → 点「保存」→ 弹窗点「允许」");
+    return null;
+  }
   const start = Date.now();
   const seen = new Set();
   const tried = new Set();
