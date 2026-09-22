@@ -805,7 +805,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "clash_import_config": {
         // 面板上让用户选 Clash 的配置文件（扩展本身不读磁盘），这里只负责解析出地址和密钥
         const info = parseClashConfig(msg.text || "");
-        sendResponse({ ok: !!info.baseUrl, ...info, error: info.baseUrl ? "" : "这份配置里没有 external-controller" });
+        let error = "";
+        if (info.controllerOff) {
+          error =
+            "这份配置里 external-controller 是空的——说明 Clash Verge 里「外部控制」开关没打开，" +
+            "内核因此不会监听任何管理端口。去 Verge 设置里打开它，再重新导入。";
+        } else if (!info.baseUrl) {
+          error = "这份配置里没有 external-controller，可能不是 Clash 的运行时配置";
+        }
+        sendResponse({ ok: !!info.baseUrl, ...info, error });
         break;
       }
       case "clash_health": {
