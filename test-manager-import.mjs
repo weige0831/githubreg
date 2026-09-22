@@ -8,6 +8,17 @@
 import fs from "node:fs";
 import vm from "node:vm";
 
+// ===== 测试加速 =====
+// 被测代码里有"故意"的等待（导入重试 3s/6s、批量衔接 10s、开号重试 5s/10s 等），
+// 真实跑一遍要 70 多秒。这里把 setTimeout 的延时统一压到 20ms：
+// 只影响本测试进程，不改任何产品代码，也不改变执行顺序与逻辑。
+const realSetTimeout = globalThis.setTimeout;
+const realSetInterval = globalThis.setInterval;
+const SLEEP_CAP_MS = 20;
+globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, Math.min(Number(ms) || 0, SLEEP_CAP_MS), ...rest);
+// setInterval 不动（content.js 的定时器不在这里跑），保持原样更安全
+void realSetInterval;
+
 // ---------- chrome stub ----------
 const store = { local: {}, session: {} };
 const listeners = [];
