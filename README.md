@@ -177,6 +177,30 @@
 > 推送用的 GitHub token 放在仓库目录之外的 `~/.zcode/github-token.txt`（API 方式）和
 > `~/.zcode/git-credentials`（git 方式）。
 
+### 💾 配置备份（重装扩展也不丢参数）
+
+扩展**没法往任意目录写文件**（Chrome 的安全边界），能静默落盘的只有浏览器下载目录。
+所以做法是：备份写到 `<下载目录>\githubreg-backup\config.json`，本机再把这个目录做成
+**指向 AppData 的目录联接**，文件物理上就在 `%LOCALAPPDATA%\githubreg-backup\config.json`。
+
+```bat
+:: 建联接（管理员或普通用户都可以；先删掉同名普通文件夹）
+mklink /J "%USERPROFILE%\Downloads\githubreg-backup" "%LOCALAPPDATA%\githubreg-backup"
+```
+
+| 行为 | 说明 |
+| --- | --- |
+| 自动备份 | 每次「保存」参数（管理器 / 邮局 / Clash，含生成 API Key、清空黑名单）都会自动写一份 |
+| 立即备份 / 从备份恢复 | 手动各来一次；恢复后三个区块的界面会自动刷新 |
+| 备份内容 | `gamConfig`（管理器）、`mailConfig`（邮局）、`clashConfig`（Clash）、`gamState`（分组/编号进度）、`gamUsedNames`（当天用过的分组名） |
+| 不含 | 账户列表、待重试队列——这些是数据不是参数，不写进备份文件 |
+| 下载记录 | 备份后会把自己从 Chrome 下载列表里抹掉（文件仍留在磁盘），免得每次保存都多一条 |
+
+> 重装流程：卸载扩展 → 重新加载 → 面板「💾 配置备份」→「从备份恢复」→ 选
+> `Downloads\githubreg-backup\config.json`（或直接选 `%LOCALAPPDATA%\githubreg-backup\config.json`）。
+> 如果 Chrome 拒绝往联接目录里写（报「备份失败」），删掉联接换成普通文件夹即可：
+> `rmdir "%USERPROFILE%\Downloads\githubreg-backup"`，备份会落在下载目录里，功能不受影响。
+
 ## 文件结构
 
 ```

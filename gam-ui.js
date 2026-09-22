@@ -85,6 +85,7 @@ function initManagerBox() {
     if (!perm.ok) return { ok: false, error: perm.error };
     const r = await bgSend("gam_set_config", { config: cfg });
     render(r.status);
+    if (r.ok) backupQuietly();
     return r;
   }
 
@@ -121,6 +122,7 @@ function initManagerBox() {
     if (r.ok) {
       keyEl.value = r.key;
       render(r.status);
+      backupQuietly();
       uiMsg(msgEl, "已生成并保存 API Key：" + r.key.slice(0, 16) + "...", true);
     } else {
       uiMsg(msgEl, "生成失败：" + (r.error || "未知错误"), false);
@@ -134,6 +136,7 @@ function initManagerBox() {
     uiMsg(msgEl, r.ok ? `本次补导入 ${r.done} 个，剩余待重试 ${r.left} 个` : "补导入失败", r.ok);
   });
 
+  registerRefresher(async () => render((await bgSend("gam_get_status")).status));
   bgSend("gam_get_status").then((r) => render(r.status));
 }
 
@@ -160,6 +163,7 @@ function initMailBox() {
     if (!perm.ok) return { ok: false, error: perm.error };
     const r = await bgSend("mail_set_config", { config: cfg });
     render(r.status);
+    if (r.ok) backupQuietly();
     return r;
   }
 
@@ -180,6 +184,7 @@ function initMailBox() {
     uiMsg(msgEl, r.ok ? `建邮箱成功：${r.email}` : "失败：" + (r.error || "未知错误"), r.ok);
   });
 
+  registerRefresher(async () => render((await bgSend("mail_get_status")).status));
   bgSend("mail_get_status").then((r) => render(r.status));
 }
 
@@ -231,6 +236,7 @@ function initClashBox() {
     }
     const r = await bgSend("clash_set_config", { config: cfg });
     render(r.status);
+    if (r.ok) backupQuietly();
     return r;
   }
 
@@ -307,6 +313,7 @@ function initClashBox() {
   $id("clashClear").addEventListener("click", async () => {
     const r = await bgSend("clash_set_config", { config: { clearBlacklist: true } });
     render(r.status);
+    if (r.ok) backupQuietly();
     uiMsg(msgEl, "已清空黑名单（节点可以再被选中）", r.ok);
   });
 
@@ -335,6 +342,7 @@ function initClashBox() {
     );
   });
 
+  registerRefresher(async () => render((await bgSend("clash_get_status")).status));
   bgSend("clash_get_status").then((r) => render(r.status));
 }
 
@@ -366,12 +374,16 @@ async function backupConfig() {
     new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
   );
   try {
-    await chrome.downloads.download({
+    const id = await chrome.downloads.download({
       url,
       filename: BACKUP_FILE,
       conflictAction: "overwrite",
       saveAs: false,
     });
+    // 备份文件留在磁盘上，但把下载记录抹掉，免得每次保存参数都多一条下载
+    setTimeout(() => {
+      try { chrome.downloads.erase({ id }); } catch (e) {}
+    }, 1500);
     await chrome.storage.local.set({ configBackupAt: payload.savedAt });
     return { ok: true, at: payload.savedAt };
   } finally {
