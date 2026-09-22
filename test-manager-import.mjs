@@ -95,6 +95,8 @@ globalThis.fetch = async (url, opts = {}) => {
   // 端口行为可配置：clashDeadPorts 模拟没开，clashSecretPorts 模拟需要密钥（像 Clash Verge）
   if (/^https?:\/\/127\.0\.0\.1:(\d+)\/(proxies|version)/.test(full)) {
     const port = full.match(/^https?:\/\/127\.0\.0\.1:(\d+)\//)[1];
+    // 没授权时浏览器会直接拦掉请求，表现就是 fetch 抛「Failed to fetch」
+    if (!api.permitted) throw new TypeError("Failed to fetch");
     if (api.clashDeadPorts.has(port)) throw new TypeError("fetch failed"); // 端口没开
     if (
       api.clashSecretPorts.has(port) &&

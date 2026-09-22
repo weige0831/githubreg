@@ -234,14 +234,21 @@ async function originPermitted(rawUrl) {
 //   secret: xxxxx
 function parseClashConfig(text) {
   const src = String(text || "");
-  const pick = (key) => {
-    const m = src.match(new RegExp(`^[ \\t]*${key}[ \\t]*:[ \\t]*(.+)$`, "m"));
-    if (!m) return "";
-    return m[1].trim().replace(/^["']|["']$/g, "").replace(/\s+#.*$/, "").trim();
+  // 返回 null = 配置里没这个键；返回 "" = 有这个键但值是空的（Verge 关闭开关时会写成 ''）
+  const raw = (key) => {
+    const m = src.match(new RegExp(`^[ \\t]*${key}[ \\t]*:[ \\t]*(.*)$`, "m"));
+    return m ? m[1].replace(/\s+#.*$/, "").trim() : null;
   };
-  let base = pick("external-controller");
+  const strip = (v) => (v == null ? "" : v.replace(/^["']|["']$/g, "").trim());
+
+  const ctrlRaw = raw("external-controller");
+  const secret = strip(raw("secret"));
+  let base = strip(ctrlRaw);
   if (base && !/^https?:\/\//i.test(base)) base = "http://" + base;
-  return { baseUrl: base, secret: pick("secret") };
+
+  // Clash Verge 关闭「外部控制」时会生成 external-controller: ''，内核因此完全不监听管理端口
+  const controllerOff = ctrlRaw !== null && base === "";
+  return { baseUrl: base, secret, controllerOff };
 }
 
 // 探测常见的控制器地址（连不上 / 密钥不对时给个明确结论）
