@@ -194,10 +194,22 @@ async function pollForCode(token, timeoutMs = 150000) {
   const start = Date.now();
   const seen = new Set();
   const tried = new Set();
+  let fetchFails = 0;
+  let switched = false;
   while (Date.now() - start < timeoutMs) {
     try {
       const resp = await fetch(`${trimUrl(apiUrl)}/api/v1/${token}/emails`);
+      if (!resp.ok) {
+        // 连不上（或服务端报错）：累计几次就换节点再继续收
+        fetchFails += 1;
+        if (fetchFails >= 3 && !switched) {
+          switched = true;
+          notify(`⚠️ 邮局连续 ${fetchFails} 次连不上：换个节点再继续收验证码`);
+          await switchNodeForRetry("邮局连不上，换节点重试");
+        }
+      }
       if (resp.ok) {
+        fetchFails = 0;
         const data = await resp.json();
         for (const mail of data.emails || []) {
           const id = mail.id;
@@ -217,7 +229,13 @@ async function pollForCode(token, timeoutMs = 150000) {
         }
       }
     } catch (e) {
-      // 忽略网络抖动，继续轮询
+      // 网络抖动：继续轮询，但累计够几次就换节点（换完继续收）
+      fetchFails += 1;
+      if (fetchFails >= 3 && !switched) {
+        switched = true;
+        notify(`⚠️ 邮局连续 ${fetchFails} 次连不上：换个节点再继续收验证码`);
+        await switchNodeForRetry("邮局连不上，换节点重试");
+      }
     }
     await sleep(3000);
   }
@@ -285,6 +303,16 @@ async function startOne(extra = {}) {
   return { email, password, username, token, tabId: tab.id };
 }
 
+
+// 邮局 / 管理器连不上时换节点再试（它们也经 Clash 转发，节点坏了同样连不上）。
+// 只在「Clash 自动切换」开着时动作，关着就静默跳过，免得刷一堆没用的日志。
+async function switchNodeForRetry(reason) {
+  const cfg = await getClashConfig();
+  if (!cfg.enabled) return null;
+  const r = await clashSwitch(reason, { rotate: true, blacklist: true });
+  if (!r || !r.ok) notify(`（换节点没成功：${(r && r.error) || "未知原因"}，继续重试）`);
+  return r;
+}
 
 // 开一个新号：邮局/网络抖动时**一直重试**（不设次数上限），等待时间逐步拉长到最多 60 秒。
 // 每失败 3 次顺手换个节点（邮局也是走代理访问的，节点坏了同样会连不上）。
@@ -629,6 +657,20 @@ async function importWithRetry(account) {
       if (attempt < 3) await sleep(attempt * 3000);
     }
   }
+  // 3 次都失败：先换个节点再试一次（"连不上服务器"多半是节点问题），还不行才入队
+  notify("⚠️ 导入管理器连续失败：换个节点再试一次");
+  await switchNodeForRetry("管理器连不上，换节点重试");
+  try {
+    return await importAccountToManager(account);
+  } catch (e) {
+    const msg = String(e.message || e);
+    if (GAM_FATAL.test(msg)) {
+      notify(`⏭️ 跳过导入管理器：${msg}`);
+      return { ok: false, skipped: msg };
+    }
+    notify(`❌ 换节点后仍未成功：${msg}`);
+  }
+
   const { gamPending = [] } = await chrome.storage.local.get("gamPending");
   gamPending.push({ ...account, failedAt: new Date().toISOString() });
   await chrome.storage.local.set({ gamPending });
@@ -645,6 +687,7 @@ async function flushPendingImports(limit = 5) {
 
   const rest = [];
   let done = 0;
+  let switchedForFlush = false;
   for (const acc of gamPending.slice(0, limit)) {
     try {
       const r = await importAccountToManager(acc);
@@ -656,6 +699,11 @@ async function flushPendingImports(limit = 5) {
         notify(`待重试账户跳过（${msg}）：${acc.username || acc.email}`);
       } else {
         rest.push(acc);
+        if (!switchedForFlush) {
+          switchedForFlush = true;
+          notify("⚠️ 补导入连不上管理器：换个节点再继续");
+          await switchNodeForRetry("补导入连不上管理器");
+        }
       }
     }
   }
