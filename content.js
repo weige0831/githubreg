@@ -11,6 +11,11 @@ const USER_SEL = 'input#login, input[name="user[login]"]';
 const CODE_INPUT_SEL =
   'input#launch-code-0, input[autocomplete="one-time-code"], input[name="otp"], input[inputmode="numeric"]';
 
+// 注册表单里「这个邮箱已经注册过」的几种说法（GitHub 换过文案，都要认）
+// 截图里那条：The email you have provided is already associated with an account.
+const EMAIL_TAKEN_RE =
+  /already associated|already registered|already been taken|already taken|invalid email/i;
+
 // ===== 创建 token 页面 =====
 // classic token 页：scopes 由 URL 参数预勾选，页面只需填 Note -> 选 No expiration -> Generate
 const TOKEN_SCOPES = [
@@ -246,17 +251,33 @@ async function runFill(task) {
   }
 
   // 表单报错检查（邮箱已注册等），别傻等验证码
-  const body = document.body.innerText.toLowerCase();
-  if (body.includes("already registered") || body.includes("invalid email")) {
-    log("表单报错：" + (body.includes("already registered") ? "邮箱已注册" : "邮箱无效"));
-    task.stage = "done";
-    await setTask(task);
+  if (EMAIL_TAKEN_RE.test(document.body.innerText)) {
+    await handleEmailTaken(task);
     return;
   }
 
   task.stage = "code";
   await setTask(task);
   log("等待 GitHub 验证码...");
+}
+
+// 邮箱已经被注册过。分两种情况：
+//   1) 这个号其实就是我们自己上一轮建出来的（同一任务、同一密码）→ 直接去登录页用原密码登进去，别浪费；
+//   2) 不是我们的（邮箱被回收/撞名）→ 让后台换一个邮箱重开一个注册任务，位置不变。
+// 换邮箱最多 3 次，超过就按「无 token」保存账户收尾，避免这一批卡死在这里。
+async function handleEmailTaken(task) {
+  task.emailTaken = true;
+  task.recoverAttempts = (task.recoverAttempts || 0) + 1;
+  await setTask(task);
+  log(`⚠️ 这个邮箱已被注册过（第 ${task.recoverAttempts} 次）：${task.email}`);
+
+  if (task.recoverAttempts > 3) {
+    log("换邮箱重试次数过多，先保存账户（无 token）");
+    await finish(task);
+    return;
+  }
+  log("先试原密码登录：能登上说明这个号是我们自己建的，登不上就换邮箱");
+  location.href = "https://github.com/login";
 }
 
 // ===== 验证码页：收信 + 填码 =====
@@ -343,8 +364,10 @@ async function runCode(task) {
 
 // ===== 注册成功后自动登录 + 创建 fine-grained token =====
 
-async function autoLogin(task) {
-  log("注册成功！自动登录中...");
+async function autoLogin(task, reason = "注册成功！自动登录中...") {
+  log(reason);
+  task.loginSubmitted = true; // 标记已提交过，之后登录页再报错才判定成「密码不对」
+  await setTask(task);
   const userEl = await waitFor(() => qs("#login_field"), 30000);
   if (!userEl) {
     log("登录页没找到用户名输入框");
@@ -612,6 +635,22 @@ async function finish(task) {
     return;
   }
 
+  // 1.5) 邮箱已被注册过：在登录页用原密码试登
+  if (task.emailTaken && isLogin) {
+    const body = bodyText();
+    // 只有「已经提交过登录」时页面上的报错才算密码不对，否则第一次打开登录页就该先试一次
+    if (task.loginSubmitted && /incorrect|invalid|not match|wrong/.test(body)) {
+      // 密码对不上 = 这个邮箱不是我们建的：换一个邮箱重开，位置不变
+      log("登录失败：这个邮箱不是我们注册的，换一个邮箱重来");
+      task.emailTaken = false;
+      await setTask(task);
+      await send({ type: "new_account", attempts: task.recoverAttempts || 0 });
+      return;
+    }
+    await autoLogin(task, "用原密码尝试登录（邮箱已被注册过）...");
+    return;
+  }
+
   // 2) token 创建页
   if (isTokenPage && task.stage === "token") {
     if (task.tokenGenerated) {
@@ -644,6 +683,12 @@ async function finish(task) {
   }
 
   // 3) 注册表单页：填表提交
+  //    邮箱已被注册过的任务不再重复提交（GitHub 只会再报一次同样的错），直接去登录页试原密码
+  if (hasEmail && task.emailTaken) {
+    log("该任务的邮箱已被注册过，不再重复提交表单，转去登录页");
+    location.href = "https://github.com/login";
+    return;
+  }
   if (hasEmail) {
     await runFill(task);
     // 提交后可能是 SPA 原地出验证码框（无整页导航）

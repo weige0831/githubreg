@@ -161,3 +161,10 @@ extension/
 
 注册流程按 `stage`（start → fill → code → done）驱动，跨页面导航状态存在
 `chrome.storage.session`，刷新/跳转不会丢进度。
+
+**邮箱已被注册过**（GitHub 提示 `The email you have provided is already associated with an account.`）：
+
+1. 先判断这个号是不是我们自己建过的——是的话用同一密码去登录页登进去，接着做 token，账号不浪费；
+2. 密码对不上说明这个邮箱不是我们的 → 让后台清一遍环境、换一个新邮箱重开注册，**批次名额不消耗**（还是同一个位置）；
+3. 换邮箱最多重试 3 次，超过就按「无 token」保存这个账户收尾，避免整批卡死在一步。
+   任务被标记过 `emailTaken` 之后不会再重复提交注册表单（GitHub 只会再报一次同样的错）。

@@ -227,7 +227,8 @@ async function setQueue(q) {
 }
 
 // 开一个注册流程（新邮箱 + 新账户 + 打开首页）
-async function startOne() {
+// extra 会并进新任务里（比如换邮箱重试要带着 recoverAttempts，否则重试次数会被清零）
+async function startOne(extra = {}) {
   // 批量衔接：先关掉上一个任务的标签页，避免越开越多
   try {
     const prev = (await chrome.storage.session.get("task")).task;
@@ -240,7 +241,7 @@ async function startOne() {
   const username = randUsername();
   const tab = await chrome.tabs.create({ url: HOME_URL, active: true });
   await chrome.storage.session.set({
-    task: { stage: "start", email, password, username, token, tabId: tab.id },
+    task: { stage: "start", email, password, username, token, tabId: tab.id, ...extra },
   });
   notify(`📧 临时邮箱: ${email}`);
   // 尽量自动呼出常驻侧边栏面板（不 await，避免拖慢批量衔接）
@@ -643,6 +644,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse({ ok: true, ...info, count });
         } catch (e) {
           notify("启动失败: " + String(e));
+          sendResponse({ ok: false, error: String(e) });
+        }
+        break;
+      }
+      case "new_account": {
+        // 邮箱不可用（已被注册且不是我们的号）时换一个邮箱重开，
+        // 队列位置不变（不消耗 batch 计数），所以这次重试不占用一个名额
+        try {
+          notify("🔄 换新邮箱重新开一个注册任务...");
+          await cleanupBeforeNext({ openGithub: false });
+          const info = await startOne({ recoverAttempts: msg.attempts || 0 });
+          sendResponse({ ok: true, ...info });
+        } catch (e) {
+          notify("换邮箱重开失败: " + String(e));
           sendResponse({ ok: false, error: String(e) });
         }
         break;

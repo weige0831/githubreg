@@ -326,6 +326,21 @@ await send({ type: "gam_set_config", config: { saveLocal: true } });
 await send({ type: "done", account: { ...acct(34), token: "key_valid_34" } });
 check("打开后本地照旧留一份", !!(await localAccounts()).find((a) => a.email === "gh_test34@example.com"));
 
+// 用例 17：邮箱被注册过时换邮箱重开（不占批次名额，重试次数要带过去）
+await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
+const queueBefore17 = (await send({ type: "get_queue" })).queue;
+const mailsBefore17 = api.mailCalls.filter((c) => c.path === "/api/v1/addresses").length;
+const reroll = await send({ type: "new_account", attempts: 2 });
+const taskAfter17 = (await send({ type: "get_task" })).task;
+const queueAfter17 = (await send({ type: "get_queue" })).queue;
+check("换邮箱重开成功并给出新邮箱", reroll.ok && /@example\.com$/.test(reroll.email || ""), String(reroll.email));
+check("确实新建了一个邮箱", api.mailCalls.filter((c) => c.path === "/api/v1/addresses").length === mailsBefore17 + 1, "");
+check("新任务带上了重试次数（不会被清零）", !!taskAfter17 && taskAfter17.recoverAttempts === 2, JSON.stringify(taskAfter17 && taskAfter17.recoverAttempts));
+check("换邮箱不消耗批次名额", JSON.stringify(queueAfter17) === JSON.stringify(queueBefore17),
+  `${JSON.stringify(queueBefore17)} → ${JSON.stringify(queueAfter17)}`);
+check("新任务是全新起点（stage=start，有邮箱密码）",
+  taskAfter17.stage === "start" && !!taskAfter17.email && !!taskAfter17.password, JSON.stringify({ stage: taskAfter17.stage, email: taskAfter17.email }));
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
