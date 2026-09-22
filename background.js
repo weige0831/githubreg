@@ -286,19 +286,30 @@ async function startOne(extra = {}) {
 }
 
 
-// 开一个新号：邮局/网络抖动时自动重试，避免整批停在这一步（全自动，不需要人管）
-async function startOneWithRetry(extra = {}, attempts = 3) {
-  let lastErr = null;
-  for (let i = 1; i <= attempts; i++) {
+// 开一个新号：邮局/网络抖动时**一直重试**（不设次数上限），等待时间逐步拉长到最多 60 秒。
+// 每失败 3 次顺手换个节点（邮局也是走代理访问的，节点坏了同样会连不上）。
+// 用户点「停止」时立刻中断。
+async function startOneWithRetry(extra = {}) {
+  let fails = 0;
+  for (;;) {
+    const { task } = await chrome.storage.session.get("task");
+    if (task && task.stopped) throw new Error("已停止（用户点了停止）");
     try {
       return await startOne(extra);
     } catch (e) {
-      lastErr = e;
-      notify(`⚠️ 开新号失败（${i}/${attempts}）：${String((e && e.message) || e)}`);
-      if (i < attempts) await sleep(i * 5000);
+      fails += 1;
+      notify(`⚠️ 开新号失败（第 ${fails} 次）：${String((e && e.message) || e)} —— 30 秒内自动重试，不会中断`);
+      if (fails % 3 === 0) {
+        // 连不上很可能是当前节点的问题（邮局也要经代理），换一个再试
+        const sw = await clashSwitch("开新号连续失败，换节点重试", { rotate: true, blacklist: true }).catch(() => null);
+        if (sw && sw.ok) notify(`已换节点：${sw.from || "?"} → ${sw.to || "?"}，继续重试`);
+        else notify("换节点没成功（可能没启用或没可换的），继续重试");
+      }
+      const waitMs = Math.min(60, 5 * Math.min(fails, 12)) * 1000;
+      notify(`等 ${waitMs / 1000} 秒后重试...`);
+      await sleep(waitMs);
     }
   }
-  throw lastErr || new Error("开新号失败");
 }
 
 // ===== 账户间清理：删 GitHub cookie + 留一个标签页 =====
@@ -795,6 +806,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       case "clear_accounts": {
         await clearAccounts();
         sendResponse({ ok: true });
+        break;
+      }
+      case "stop": {
+        // 中途停止：清掉批量队列（不会再开下一个号），并给当前任务打标记，
+        // 页面脚本的自动重试循环看到标记就停手。再点「开始注册」即重新开始（新任务不带这个标记）
+        try {
+          await setQueue(null);
+          const { task } = await chrome.storage.session.get("task");
+          if (task) await chrome.storage.session.set({ task: { ...task, stopped: true } });
+          stopClashAlarm();
+          notify("⏹ 已停止：不再开新号、自动重试也停下（点「开始注册」可重新开始）");
+          sendResponse({ ok: true });
+        } catch (e) {
+          notify("停止失败: " + String(e));
+          sendResponse({ ok: false, error: String(e) });
+        }
         break;
       }
       case "get_queue": {
