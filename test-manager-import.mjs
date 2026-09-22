@@ -533,6 +533,14 @@ check("没写 secret 的配置也能读（密钥留空）", noSecret.ok && noSec
 const emptyCfg = await send({ type: "clash_import_config", text: "mode: rule\n" });
 check("不是 Clash 配置时明确报错", !emptyCfg.ok && /external-controller/.test(emptyCfg.error || ""), String(emptyCfg.error));
 
+// 内核实际加载的配置里 external-controller 是空值（Verge 关了「外部控制」开关）→ 要指出开关没开
+const offCfg = await send({
+  type: "clash_import_config",
+  text: ["mixed-port: 7890", "external-controller: ''", "secret: x", "external-controller-pipe: \\\\.\\pipe\\verge-mihomo"].join("\n"),
+});
+check("开关关闭（external-controller 为空）时点明「外部控制没打开」",
+  !offCfg.ok && offCfg.controllerOff === true && /外部控制/.test(offCfg.error || ""), String(offCfg.error));
+
 // 用例 25：还没拿到本地地址权限时，要指出「没授权」而不是含糊的"连不上"
 api.permitted = false;
 api.clashDeadPorts = new Set();
