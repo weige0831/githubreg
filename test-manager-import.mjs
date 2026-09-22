@@ -692,6 +692,19 @@ check("清会话只清 cookie + localStorage（不动其它站点）", /origins:
 check("重置有上限（超过 7 次按无 token 收尾）", /n > 7/.test(src34) && /已重置/.test(src34), "");
 check("token 阶段清会话后换新邮箱重开", /task\.stage === .token.[\s\S]{0,200}new_account/.test(src34), "");
 
+// 用例 35：遇到「访问暂时受限」超上限时是「丢弃」而不是「存空号」
+await send({ type: "clear_accounts" });
+const impBefore35 = api.accounts.length;
+const q35 = (await send({ type: "get_queue" })).queue;
+await send({ type: "done", save: false, account: { email: "gh_drop@example.com", username: "dropme", password: "Pw!", token: "" } });
+const accs35 = (await send({ type: "get_accounts" })).accounts;
+check("丢弃的号没有写进账户列表", !accs35.some((a) => a.email === "gh_drop@example.com"), "账户数 " + accs35.length);
+check("丢弃的号也没有进管理器", api.accounts.length === impBefore35, "管理器 " + api.accounts.length);
+check("日志里有明确的丢弃记录", logs.some((l) => /这个号按要求丢弃/.test(l)), logs.filter((l) => /丢弃/.test(l)).join(" | ").slice(0, 80));
+check("丢弃也照常推进批次（队列有变化或已清空）", JSON.stringify((await send({ type: "get_queue" })).queue) !== JSON.stringify({ total: 0, left: 0 }), JSON.stringify(q35));
+const src35 = fs.readFileSync("content.js", "utf8");
+check("超上限时用 save:false（并把凭据打进日志备查）", /await finish\(task, \{ save: false \}\)/.test(src35) && /凭据备查/.test(src35), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
