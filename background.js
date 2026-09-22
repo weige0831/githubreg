@@ -755,6 +755,46 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         break;
       }
+      case "clash_get_status": {
+        sendResponse({ ok: true, status: await clashStatus() });
+        break;
+      }
+      case "clash_set_config": {
+        const { clashConfig } = await chrome.storage.local.get("clashConfig");
+        await chrome.storage.local.set({
+          clashConfig: { ...(clashConfig || {}), ...msg.config },
+        });
+        sendResponse({ ok: true, status: await clashStatus() });
+        break;
+      }
+      case "clash_test": {
+        // 连一下控制器，报告当前节点与延迟
+        try {
+          const cfg = await getClashConfig();
+          const group = await clashPickGroup(cfg);
+          const info = await clashRequest(`/proxies/${encodeURIComponent(group)}`);
+          const node = (info && info.now) || "";
+          const delay = await clashDelay(node, cfg);
+          sendResponse({
+            ok: true,
+            group,
+            node,
+            delay,
+            total: ((info && info.all) || []).length,
+          });
+        } catch (e) {
+          sendResponse({ ok: false, error: String(e.message || e) });
+        }
+        break;
+      }
+      case "clash_switch": {
+        // 手动换，或页面脚本检测到 GitHub 限流时触发（reload=true 表示换完刷新当前页面）
+        const r = await clashSwitch(msg.reason || "手动切换");
+        let reloaded = false;
+        if (r.ok && msg.reload) reloaded = await reloadTaskTab("换节点后刷新重试");
+        sendResponse({ ...r, reloaded, status: await clashStatus() });
+        break;
+      }
       case "mail_get_status": {
         sendResponse({ ok: true, status: await mailStatus() });
         break;
