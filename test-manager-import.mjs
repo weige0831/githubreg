@@ -476,8 +476,8 @@ for (let i = 0; i < 6; i++) {
 check("可换节点用完后明确失败", !!last && !last.ok && /没有可换的节点/.test(last.error || ""), String(last && last.error));
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
-// 用例 21：Clash Verge 场景——地址填错（9090 没开）+ 需要密钥（9097）
-api.clashDeadPorts = new Set(["9090"]);
+// 用例 21：Clash Verge 场景——只有 9097 在监听（且要密钥），9090 等常见端口都没开
+api.clashDeadPorts = new Set(["9090", "9091", "9098", "9099", "63443"]);
 api.clashSecretPorts = new Set(["9097"]);
 await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "", group: "" } });
 const probe1 = await send({ type: "clash_test" });
