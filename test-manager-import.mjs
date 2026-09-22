@@ -82,9 +82,19 @@ globalThis.fetch = async (url, opts = {}) => {
   const json = (status, obj) => ({ ok: status < 400, status, json: async () => obj, text: async () => JSON.stringify(obj) });
   const bad = (message) => json(400, { code: 400, error: "bad_request", message });
 
-  // ---- 假的 Clash 控制器（external-controller，不走管理器的鉴权）----
-  if (/^https?:\/\/127\.0\.0\.1:\d+\/proxies/.test(full)) {
+  // ---- 假的 Clash 控制器（external-controller）----
+  // 端口行为可配置：clashDeadPorts 模拟没开，clashSecretPorts 模拟需要密钥（像 Clash Verge）
+  if (/^https?:\/\/127\.0\.0\.1:(\d+)\/(proxies|version)/.test(full)) {
+    const port = full.match(/^https?:\/\/127\.0\.0\.1:(\d+)\//)[1];
+    if (api.clashDeadPorts.has(port)) throw new TypeError("fetch failed"); // 端口没开
+    if (
+      api.clashSecretPorts.has(port) &&
+      (opts.headers && opts.headers.Authorization) !== `Bearer ${api.clashSecretValue}`
+    ) {
+      return json(401, { message: "Unauthorized" });
+    }
     api.clashRequests++;
+    if (path === "/version") return json(200, { version: "1.18.2", meta: true });
     if (path === "/proxies") {
       return json(200, {
         proxies: {
