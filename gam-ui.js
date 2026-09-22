@@ -52,15 +52,19 @@ function initManagerBox() {
   const localEl = $id("gamSaveLocal");
   const stateEl = $id("gamState");
   const msgEl = $id("gamMsg");
+  let dirty = false; // 用户动过表单就别再用状态覆盖他的输入
+  $id("gamBox").addEventListener("input", () => { dirty = true; });
 
   function render(s) {
     if (!s) return;
-    enabledEl.checked = !!s.enabled;
-    urlEl.value = s.baseUrl || "";
-    passEl.value = s.masterPassword || "";
-    keyEl.value = s.apiKey || "";
-    sizeEl.value = s.groupSize || 10;
-    localEl.checked = s.saveLocal !== false;
+    if (!dirty) {
+      enabledEl.checked = !!s.enabled;
+      urlEl.value = s.baseUrl || "";
+      passEl.value = s.masterPassword || "";
+      keyEl.value = s.apiKey || "";
+      sizeEl.value = s.groupSize || 10;
+      localEl.checked = s.saveLocal !== false;
+    }
     const parts = [`已导入 ${s.imported} 个`];
     if (s.enabled) {
       parts.push(`下一备注 ${s.nextNote}`, `鉴权 ${s.authMode}`);
@@ -85,7 +89,10 @@ function initManagerBox() {
     if (!perm.ok) return { ok: false, error: perm.error };
     const r = await bgSend("gam_set_config", { config: cfg });
     render(r.status);
-    if (r.ok) backupQuietly();
+    if (r.ok) {
+      dirty = false;
+      backupQuietly();
+    }
     return r;
   }
 
@@ -148,11 +155,15 @@ function initMailBox() {
   const domainEl = $id("mailDomain");
   const stateEl = $id("mailState");
   const msgEl = $id("mailMsg");
+  let dirty = false;
+  $id("mailBox").addEventListener("input", () => { dirty = true; });
 
   function render(s) {
     if (!s) return;
-    urlEl.value = s.apiUrl || "";
-    domainEl.value = s.domain || "";
+    if (!dirty) {
+      urlEl.value = s.apiUrl || "";
+      domainEl.value = s.domain || "";
+    }
     stateEl.textContent = s.domain ? `域名 ${s.domain}` : "未配置";
   }
 
@@ -163,7 +174,10 @@ function initMailBox() {
     if (!perm.ok) return { ok: false, error: perm.error };
     const r = await bgSend("mail_set_config", { config: cfg });
     render(r.status);
-    if (r.ok) backupQuietly();
+    if (r.ok) {
+      dirty = false;
+      backupQuietly();
+    }
     return r;
   }
 
@@ -200,15 +214,19 @@ function initClashBox() {
   const blockEl = $id("clashBlock");
   const stateEl = $id("clashState");
   const msgEl = $id("clashMsg");
+  let dirty = false;
+  $id("clashBox").addEventListener("input", () => { dirty = true; });
 
   function render(s) {
     if (!s) return;
-    enabledEl.checked = !!s.enabled;
-    urlEl.value = s.baseUrl || "";
-    secretEl.value = s.secret || "";
-    groupEl.value = s.group || "";
-    slowEl.value = s.slowMs || 5000;
-    blockEl.value = s.blacklistMinutes || 10;
+    if (!dirty) {
+      enabledEl.checked = !!s.enabled;
+      urlEl.value = s.baseUrl || "";
+      secretEl.value = s.secret || "";
+      groupEl.value = s.group || "";
+      slowEl.value = s.slowMs || 5000;
+      blockEl.value = s.blacklistMinutes || 10;
+    }
     if (!s.enabled) {
       stateEl.textContent = "未启用";
       return;
@@ -236,7 +254,10 @@ function initClashBox() {
     }
     const r = await bgSend("clash_set_config", { config: cfg });
     render(r.status);
-    if (r.ok) backupQuietly();
+    if (r.ok) {
+      dirty = false;
+      backupQuietly();
+    }
     return r;
   }
 

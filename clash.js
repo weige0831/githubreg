@@ -108,7 +108,20 @@ async function clashDelay(node, cfg) {
 // 换节点：拉黑当前节点，从没被拉黑的里挑（先测 3 个候选，取最快的）
 async function clashSwitch(reason) {
   const cfg = await getClashConfig();
-  if (!cfg.enabled) return { ok: false, error: "Clash 自动切换未启用" };
+  if (!cfg.enabled) {
+    return {
+      ok: false,
+      enabled: false,
+      error: "Clash 自动切换没开：面板 → 🔀 Clash 换节点 → 勾上「限流 / 节点太慢时自动换节点」→ 点保存",
+    };
+  }
+  if (!trimUrl(cfg.baseUrl)) {
+    return {
+      ok: false,
+      enabled: true,
+      error: "Clash 控制器地址是空的：面板 → 🔀 Clash 换节点 → 点「从配置文件导入」",
+    };
+  }
   try {
     const group = await clashPickGroup(cfg);
     const info = await clashRequest(`/proxies/${encodeURIComponent(group)}`);
