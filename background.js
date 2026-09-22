@@ -4,8 +4,6 @@
 // Clash 节点切换逻辑单独一个文件（同作用域，直接用里面的函数）
 importScripts("clash.js");
 
-const MAIL_DOMAIN_PLACEHOLDER = ""; // 见 getMailConfig()
-
 
 // 临时邮箱服务（邮局地址 + 收信域名）：不写默认值，在面板「📧 临时邮箱」里填一次并保存，
 // 存在扩展本地存储里。公开仓库里不放自己的服务地址。
