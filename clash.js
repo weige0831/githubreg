@@ -217,6 +217,42 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (r && r.ok && r.switched) await reloadTaskTab("节点太慢，换节点后刷新");
 });
 
+// 探测常见的控制器地址（连不上 / 密钥不对时给个明确结论）
+// 返回 { found, needSecret, hadSecret, wrongSecret, tried }
+async function clashProbe() {
+  const cfg = await getClashConfig();
+  const hadSecret = !!cfg.secret;
+  const tried = [];
+  for (const base of CLASH_CANDIDATES) {
+    try {
+      const resp = await fetch(base + "/version", {
+        headers: cfg.secret ? { Authorization: `Bearer ${cfg.secret}` } : {},
+      });
+      if (resp.status === 401) {
+        tried.push({ base, status: 401 });
+        continue;
+      }
+      if (!resp.ok) {
+        tried.push({ base, status: resp.status });
+        continue;
+      }
+      const info = await resp.json().catch(() => null);
+      tried.push({ base, status: 200, version: (info && (info.version || info.meta)) || "" });
+      return { found: base, needSecret: false, hadSecret, wrongSecret: false, tried };
+    } catch (e) {
+      tried.push({ base, status: 0 }); // 端口没开/连不上
+    }
+  }
+  const locked = tried.find((t) => t.status === 401);
+  return {
+    found: locked ? locked.base : "",
+    needSecret: !!locked && !hadSecret,
+    hadSecret,
+    wrongSecret: !!locked && hadSecret,
+    tried,
+  };
+}
+
 async function clashStatus() {
   const cfg = await getClashConfig();
   const blocked = await clashBlacklist();
