@@ -354,6 +354,19 @@ async function handleRateLimit(task, kind = "限流") {
   return true;
 }
 
+// 长等待期间定时"心跳"（只更新进度时间戳，不刷日志）。
+// 不这么做的话，>60 秒的合法等待会被卡住看门狗误判成卡住——验证码那两处就是 90 秒。
+async function keepAlive(fn) {
+  const t = setInterval(() => {
+    window.__ghLastLogAt = Date.now();
+  }, 15000);
+  try {
+    return await fn();
+  } finally {
+    clearInterval(t);
+  }
+}
+
 // 兜底看门狗：任何页面卡住超过 5 分钟（期间一句日志都没有）就按限流/拦截处理，
 // 免得遇到没覆盖到的页面、弹窗、请求卡死就干等在那儿（防止遗漏）
 function watchStuck(task) {
@@ -460,10 +473,15 @@ async function retryOrFinish(task, why) {
 }
 
 async function runCode(task) {
-  // 等验证码框最多 5 分钟，中间每 90 秒报一次心跳（有日志=没卡住）
-  const hb = setInterval(() => log("还在等 GitHub 的验证码框..."), 90000);
-  const gotInput = await waitFor(CODE_INPUT_SEL, 300000);
-  clearInterval(hb);
+  // 等验证码框最多 5 分钟：静默心跳 15 秒一次（防看门狗误判），另外每 90 秒在日志里报一下
+  const gotInput = await keepAlive(async () => {
+    const hb = setInterval(() => log("还在等 GitHub 的验证码框..."), 90000);
+    try {
+      return await waitFor(CODE_INPUT_SEL, 300000);
+    } finally {
+      clearInterval(hb);
+    }
+  });
   if (!gotInput) {
     // 没等到验证码框：可能已原地成功，否则自动重来
     if (bodyText().includes("created successfully")) {
@@ -477,7 +495,9 @@ async function runCode(task) {
   // 自动收信：90s 没到就点一次 Resend 催信，再等 150s
   let code = null;
   for (let attempt = 0; attempt < 3 && !code; attempt++) {
-    const resp = await send({ type: "request_code", token: task.token, timeoutMs: 90000 });
+    const resp = await keepAlive(() =>
+      send({ type: "request_code", token: task.token, timeoutMs: 90000 })
+    );
     code = resp && resp.code;
     if (!code) {
       log("90 秒未收到邮件，催信重试...");

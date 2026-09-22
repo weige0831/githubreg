@@ -662,6 +662,17 @@ check("到期条目会被自动清理", Object.keys(store.local.clashBlacklist |
 api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
+
+// 用例 32（静态不变式）：超过 60 秒的等待必须包在 keepAlive 里，
+// 否则会被"卡住看门狗"（循环内阈值 60 秒）误判成卡住
+const contentSrc = fs.readFileSync("content.js", "utf8");
+check("收验证码的 90 秒轮询在 keepAlive 里", /keepAlive\(\(\) =>\s*
+?\s*send\(\{ type: "request_code"/.test(contentSrc), "");
+check("等验证码框的 5 分钟等待在 keepAlive 里", /keepAlive\(async \(\) => \{[\s\S]{0,300}?waitFor\(CODE_INPUT_SEL/.test(contentSrc), "");
+check("keepAlive 每 15 秒打一次心跳（小于 60 秒阈值）", /setInterval\(\(\) => \{\s*
+?\s*window\.__ghLastLogAt = Date\.now\(\);\s*
+?\s*\}, 15000\)/.test(contentSrc), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
