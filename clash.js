@@ -217,6 +217,17 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (r && r.ok && r.switched) await reloadTaskTab("节点太慢，换节点后刷新");
 });
 
+// 扩展有没有被授权访问这个地址：没授权时 fetch 会直接 Failed to fetch，
+// 看起来像"端口不通"，其实是浏览器拦了，要给用户指出来
+async function originPermitted(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return await chrome.permissions.contains({ origins: [`${u.protocol}//${u.hostname}/*`] });
+  } catch (e) {
+    return true; // 判断不了就别误导用户
+  }
+}
+
 // 从 Clash / Mihomo 的运行时配置里读 external-controller 与 secret。
 // Clash Verge 生成的配置里长这样（external-controller-pipe 那行不会被误读）：
 //   external-controller: 127.0.0.1:9097
