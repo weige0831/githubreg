@@ -278,7 +278,11 @@ async function pushViaGit() {
 async function reconcileGitAfterApiPush() {
   if (!fs.existsSync(path.join(ROOT, ".git"))) return;
   const git = findGit();
-  await run(git, ["fetch", "origin"]);
+  const fetched = await run(git, ["fetch", "origin"]);
+  if (fetched.code !== 0) {
+    log("· 连不上远端（git fetch 失败），本地分支暂不对齐；等网络恢复后再跑一次即可");
+    return;
+  }
   const local = await run(git, ["rev-parse", "HEAD^{tree}"]);
   const remote = await run(git, ["rev-parse", `origin/${BRANCH}^{tree}`]);
   if (local.code !== 0 || remote.code !== 0) return;
