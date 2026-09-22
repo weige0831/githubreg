@@ -689,7 +689,7 @@ check("确实调了浏览数据清理（只清 github.com）", calls.includes("b
 const src34 = fs.readFileSync("content.js", "utf8");
 check("分流：只有限流页走换节点，其它走清会话", /if \(kind === .限流.\) return handleRateLimit/.test(src34) && /handleBlockedPage\(task, kind\)/.test(src34), "");
 check("清会话只清 cookie + localStorage（不动其它站点）", /origins: \["https:\/\/github\.com"\][\s\S]{0,120}cookies: true, localStorage: true/.test(fs.readFileSync("background.js", "utf8")), "");
-check("重置有上限（超过 7 次按无 token 收尾）", /n > 7/.test(src34) && /已重置/.test(src34), "");
+check("重置没有次数上限（一直重试到过去为止）", !/n > 7/.test(src34), "");
 check("token 阶段清会话后换新邮箱重开", /task\.stage === .token.[\s\S]{0,200}new_account/.test(src34), "");
 
 // 用例 35：遇到「访问暂时受限」超上限时是「丢弃」而不是「存空号」
@@ -703,13 +703,13 @@ check("丢弃的号也没有进管理器", api.accounts.length === impBefore35, 
 check("日志里有明确的丢弃记录", logs.some((l) => /这个号按要求丢弃/.test(l)), logs.filter((l) => /丢弃/.test(l)).join(" | ").slice(0, 80));
 check("丢弃也照常推进批次（队列有变化或已清空）", JSON.stringify((await send({ type: "get_queue" })).queue) !== JSON.stringify({ total: 0, left: 0 }), JSON.stringify(q35));
 const src35 = fs.readFileSync("content.js", "utf8");
-check("超上限时用 save:false（并把凭据打进日志备查）", /await finish\(task, \{ save: false \}\)/.test(src35) && /凭据备查/.test(src35), "");
 
 // 用例 36（静态不变式）：清会话路径每次都要「拉黑当前节点并换下一个」
 check("清会话路径里有拉黑换节点", /clash_switch[\s\S]{0,120}blacklist: true/.test(src35) && /handleBlockedPage/.test(src35), "");
 check("换节点在清会话之前（先换 IP 再清会话）",
   src35.indexOf("clash_switch") < src35.indexOf("clear_github_session"), "");
-check("仍保留 7 次上限后丢弃", /n > 7/.test(src35), "");
+check("清会话路径不再调用丢弃（无上限重试）", !/finish\(task, \{ save: false \}\)/.test(src35), "");
+check("每 7 次报一次进度与凭据", /\(n - 1\) % 7 === 0/.test(src35) && /凭据/.test(src35), "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
