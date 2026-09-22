@@ -217,6 +217,22 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (r && r.ok && r.switched) await reloadTaskTab("节点太慢，换节点后刷新");
 });
 
+// 从 Clash / Mihomo 的运行时配置里读 external-controller 与 secret。
+// Clash Verge 生成的配置里长这样（external-controller-pipe 那行不会被误读）：
+//   external-controller: 127.0.0.1:9097
+//   secret: xxxxx
+function parseClashConfig(text) {
+  const src = String(text || "");
+  const pick = (key) => {
+    const m = src.match(new RegExp(`^[ \\t]*${key}[ \\t]*:[ \\t]*(.+)$`, "m"));
+    if (!m) return "";
+    return m[1].trim().replace(/^["']|["']$/g, "").replace(/\s+#.*$/, "").trim();
+  };
+  let base = pick("external-controller");
+  if (base && !/^https?:\/\//i.test(base)) base = "http://" + base;
+  return { baseUrl: base, secret: pick("secret") };
+}
+
 // 探测常见的控制器地址（连不上 / 密钥不对时给个明确结论）
 // 返回 { found, needSecret, hadSecret, wrongSecret, tried }
 async function clashProbe() {
