@@ -82,6 +82,42 @@
     </div>
   </details>
 
+  <details id="clashBox" class="gam">
+    <summary>
+      <span>🔀 Clash 换节点</span>
+      <span id="clashState" class="gam-state">读取中...</span>
+    </summary>
+    <div class="gam-body">
+      <label class="gam-row">
+        <input id="clashEnabled" type="checkbox" />
+        <span>限流 / 节点太慢时自动换节点</span>
+      </label>
+      <label class="gam-row"><span>控制器</span><input id="clashUrl" type="text" placeholder="http://127.0.0.1:9090" /></label>
+      <label class="gam-row"><span>密钥</span><input id="clashSecret" type="text" placeholder="config.yaml 的 secret，没有就留空" /></label>
+      <label class="gam-row"><span>分组</span><input id="clashGroup" type="text" placeholder="留空自动挑 Selector 分组" /></label>
+      <label class="gam-row">
+        <span>慢于</span>
+        <input id="clashSlow" type="number" min="500" max="60000" step="500" />
+        <span>ms 就换</span>
+      </label>
+      <label class="gam-row">
+        <span>拉黑</span>
+        <input id="clashBlock" type="number" min="1" max="1440" />
+        <span>分钟</span>
+      </label>
+      <div class="gam-actions">
+        <button id="clashSave">保存</button>
+        <button id="clashTest">测试连接</button>
+      </div>
+      <div class="gam-actions">
+        <button id="clashSwitch">换一个节点</button>
+        <button id="clashClear">清空黑名单</button>
+      </div>
+      <div class="gam-hint">换掉的节点会拉黑一段时间，期间不再选它。分组建议用「手动选择 / Selector」类型——url-test 这类分组 Clash 会自己改回去，拉黑就不生效了。</div>
+      <div id="clashMsg" class="gam-msg"></div>
+    </div>
+  </details>
+
   <section class="log-box">
     <div class="log-title">运行日志</div>
     <div id="log"></div>
