@@ -39,6 +39,11 @@ globalThis.chrome = {
     clear: async () => {},
     onAlarm: { addListener: () => {} },
   },
+  permissions: {
+    // 默认认为已授权；测试里可以改成 false 模拟"扩展还没拿到 127.0.0.1 权限"
+    contains: async () => api.permitted,
+    request: async () => api.permitted,
+  },
   tabs: {
     create: async () => { calls.push("tabs.create"); return { id: 1 }; },
     remove: async () => { calls.push("tabs.remove"); },
