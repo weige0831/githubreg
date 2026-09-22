@@ -79,8 +79,8 @@
 
 | 字段 | 说明 |
 | --- | --- |
-| 控制器 | Clash 的 `external-controller` 地址，默认 `http://127.0.0.1:9090`（config.yaml 里那一行） |
-| 密钥 | config.yaml 里的 `secret`，没设就留空 |
+| 控制器 | Clash 的 `external-controller` 地址。**Clash Verge（Rev）默认是 `127.0.0.1:9097`**；Clash for Windows / Mihomo / 原版 Clash 常见 `9090` |
+| 密钥 | config.yaml 里的 `secret`。**Clash Verge 会自己生成一个随机密钥**，必须填，否则接口返回 401 |
 | 分组 | 要切换的分组名，留空自动挑（优先名字像「选择 / select / proxy / 节点」的 Selector） |
 | 慢于 | 延迟超过这个值（默认 5000ms）就算太慢，换节点 |
 | 拉黑 | 被换掉的节点拉黑多久（默认 10 分钟），期间不再选它 |
