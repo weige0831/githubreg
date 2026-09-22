@@ -18,21 +18,23 @@ async function bgSend(type, extra = {}) {
 
 // 扩展只预授权了 github.com；管理器和邮局地址都是用户自己填的，
 // 保存时会用 chrome.permissions.request 现场申请该域名的访问权限。
-// 用户改成别的地址，必须现场申请授权，否则后台 fetch 会被浏览器拦掉。
+// 用户改成别的地址，必须现场申请授权，否则后台 fetch 会被浏览器拦掉（表现是 Failed to fetch）。
+// 权限匹配模式里不带端口（Chrome 的匹配模式忽略端口），写 http://127.0.0.1/* 就覆盖它的所有端口。
 async function ensureHostPermission(rawUrl) {
   if (!String(rawUrl || "").trim()) return { ok: false, error: "请先填写地址" };
-  let origin;
+  let pattern;
   try {
-    origin = new URL(rawUrl).origin + "/*";
+    const u = new URL(rawUrl);
+    pattern = `${u.protocol}//${u.hostname}/*`;
   } catch (e) {
     return { ok: false, error: "地址格式不对：" + rawUrl };
   }
   try {
-    if (await chrome.permissions.contains({ origins: [origin] })) return { ok: true };
-    const granted = await chrome.permissions.request({ origins: [origin] });
+    if (await chrome.permissions.contains({ origins: [pattern] })) return { ok: true };
+    const granted = await chrome.permissions.request({ origins: [pattern] });
     return granted
       ? { ok: true }
-      : { ok: false, error: `未授权访问 ${origin}，保存时请在弹窗里点「允许」` };
+      : { ok: false, error: `未授权访问 ${pattern}，只在弹窗里点「允许」才能用` };
   } catch (e) {
     return { ok: false, error: String(e.message || e) };
   }
