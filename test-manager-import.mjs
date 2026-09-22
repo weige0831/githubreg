@@ -11,6 +11,7 @@ import vm from "node:vm";
 // ---------- chrome stub ----------
 const store = { local: {}, session: {} };
 const listeners = [];
+const startupListeners = []; // onStartup / onInstalled 注册的自检函数
 const logs = [];
 const calls = []; // 记录 chrome API 调用顺序，用来验证「先清理环境，再开新标签页」
 const area = (name) => ({
