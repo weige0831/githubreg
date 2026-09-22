@@ -761,9 +761,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "clash_set_config": {
         const { clashConfig } = await chrome.storage.local.get("clashConfig");
-        await chrome.storage.local.set({
-          clashConfig: { ...(clashConfig || {}), ...msg.config },
-        });
+        const patch = { ...(msg.config || {}) };
+        const clearBlacklist = !!patch.clearBlacklist;
+        delete patch.clearBlacklist;
+        await chrome.storage.local.set({ clashConfig: { ...(clashConfig || {}), ...patch } });
+        if (clearBlacklist) {
+          await chrome.storage.local.set({ clashBlacklist: {} });
+          notify("已清空节点黑名单");
+        }
         sendResponse({ ok: true, status: await clashStatus() });
         break;
       }
