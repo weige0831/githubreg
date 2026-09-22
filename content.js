@@ -388,18 +388,50 @@ function watchStuck(task) {
 
 // 盯着页面：限流提示常常是首屏之后才出现的，出现就立刻处理
 // 一次页面加载只处理一次（页面级标记），否则同一次刷新会被重复计数
+// 结构判断：站在流程页上（注册/登录/验证/令牌页），却既没有邮箱密码框、也没有验证码框、
+// 也没有 Sign up 按钮 —— 说明这页根本不是正常的流程页（多半是没识别出来的拦截页/白页）。
+// 这比"认文字"稳：拦截页文案可能延迟渲染或换说法，但"该有的表单都没有"是一眼能看出来的。
+function pageLooksBlank() {
+  const inFlow =
+    /\/(signup|login|account_verifications)/.test(location.pathname) ||
+    location.href.includes("/settings/tokens");
+  if (!inFlow) return false;
+  return !qs(EMAIL_SEL) && !qs(PW_SEL) && !qs(CODE_INPUT_SEL) && !hasSignupButton();
+}
+
 function watchRateLimit(task) {
   if (window.__ghAutoRegRateLimitWatch) return;
   window.__ghAutoRegRateLimitWatch = true;
+  const MAX_TICKS = 120; // 最多盯 10 分钟
   let ticks = 0;
+  let blankTicks = 0;
   const timer = setInterval(async () => {
-    if (++ticks > 18) return clearInterval(timer); // 最多盯 90 秒
+    if (++ticks > MAX_TICKS) return clearInterval(timer);
     if (window.__ghAutoRegRateLimitHandled) return clearInterval(timer); // 本次加载已处理过
+
+    // ① 认出拦截/限流文案
     const kind = limitKind();
-    if (!kind) return;
-    clearInterval(timer);
-    window.__ghAutoRegRateLimitHandled = true;
-    await handleRateLimit(task, kind);
+    if (kind) {
+      clearInterval(timer);
+      window.__ghAutoRegRateLimitHandled = true;
+      await handleRateLimit(task, kind);
+      return;
+    }
+
+    // ② 认不出文案，但页面明显不是正常流程页 —— 累计到阈值也当拦截处理
+    if (pageLooksBlank()) {
+      blankTicks += 1;
+      const need = task.rateLimit ? 12 : 18; // 已在重试循环里 60 秒，首次 90 秒
+      if (blankTicks >= need) {
+        clearInterval(timer);
+        window.__ghAutoRegRateLimitHandled = true;
+        log(`⚠️ ${location.pathname} 上既没有表单也没有按钮，已持续 ${(need * 5) / 60} 分钟：当成被拦截处理`);
+        await handleRateLimit(task, "页面异常（没有可操作元素）");
+        return;
+      }
+    } else {
+      blankTicks = 0;
+    }
   }, 5000);
 }
 
