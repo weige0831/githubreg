@@ -270,25 +270,26 @@ function backToFlow(task) {
 }
 
 // 遇到限流的处理节奏（按用户要求）：
-//   ① 先换一个节点，然后在**同一个节点上连续刷新 10 次**；
-//   ② 10 次后还限流 → 等 1 分钟，在当前节点再刷新 10 次；
-//   ③ 还限流 → 把当前节点拉黑 10 分钟，换下一个节点，回到 ① 重复；
+//   ① 一出现限流就**直接拉黑当前节点并换下一个节点**，页面重新打开；
+//   ② 在**同一个（新）节点上连续刷新 10 次**；
+//   ③ 10 次后还限流 → 等 1 分钟，在当前节点再刷新 10 次；
+//   ④ 还限流 → 把当前节点拉黑 10 分钟，换下一个节点，回到 ② 重复；
 //   一直到不出现限流为止，全程不需要人工。
-// 注意：每次页面加载只算一次刷新（页面内的观察器不会重复计数）。
+// 注意：每次页面加载只算一次刷新（页面内观察器不会重复计数）。
 async function handleRateLimit(task) {
   const rl = task.rateLimit || { node: "", refresh: 0, waited: false };
 
-  // ① 刚发现限流：先换一个节点（此时不拉黑）
+  // ① 刚发现限流：直接拉黑当前节点 + 换下一个节点
   if (!rl.node) {
     rl.refresh = 0;
     rl.waited = false;
-    log("🚦 检测到 GitHub 限流：先换一个节点，然后在这个节点上连续刷新重试");
-    const r = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true, rotate: true, blacklist: false });
+    log("🚦 检测到 GitHub 限流：拉黑当前节点并换下一个节点，然后在它上面连续刷新重试");
+    const r = await send({ type: "clash_switch", reason: "GitHub 限流：拉黑当前节点并切换", reload: true, rotate: true, blacklist: true });
     if (r && r.ok) {
       rl.node = r.to || "(当前节点)";
       task.rateLimit = rl;
       await setTask(task);
-      log(`已换到「${rl.node}」${r.delay != null ? `（延迟 ${r.delay}ms）` : ""}，页面重新打开后开始刷新重试`);
+      log(`已拉黑旧节点并换到「${rl.node}」${r.delay != null ? `（延迟 ${r.delay}ms）` : ""}，开始刷新重试`);
       return true;
     }
     rl.node = "(换节点没成功，先用当前节点)";
