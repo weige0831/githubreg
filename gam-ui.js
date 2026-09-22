@@ -297,6 +297,31 @@ function initClashBox() {
     uiMsg(msgEl, "已清空黑名单（节点可以再被选中）", r.ok);
   });
 
+  // 从 Clash 的配置文件里直接读地址和密钥（用户自己选文件，扩展不会主动读磁盘）
+  $id("clashImport").addEventListener("click", () => $id("clashFile").click());
+  $id("clashFile").addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = ""; // 同一个文件能再选一次
+    if (!file) return;
+    uiMsg(msgEl, `读取 ${file.name} ...`);
+    const text = (await file.text()).slice(0, 20000); // 控制器配置都在文件开头
+    const r = await bgSend("clash_import_config", { text });
+    if (!r.ok) {
+      uiMsg(msgEl, "没读到控制器配置：" + (r.error || "未知错误"), false);
+      return;
+    }
+    urlEl.value = r.baseUrl;
+    secretEl.value = r.secret;
+    const saved = await save();
+    uiMsg(
+      msgEl,
+      saved.ok
+        ? `已从配置里读到 ${r.baseUrl}${r.secret ? " + 密钥" : "（这份配置没有密钥）"}，已保存`
+        : "读到了但要先授权：" + (saved.error || ""),
+      saved.ok
+    );
+  });
+
   bgSend("clash_get_status").then((r) => render(r.status));
 }
 
