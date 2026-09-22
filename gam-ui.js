@@ -251,8 +251,25 @@ function initClashBox() {
         `连接正常：分组「${r.group}」当前节点「${r.node}」，延迟 ${r.delay == null ? "测不通" : r.delay + "ms"}，共 ${r.total} 个节点`,
         true
       );
+      return;
+    }
+    // 连不上时给点能直接照做的结论（Clash Verge 默认在 9097 且带随机密钥）
+    const p = r.probe;
+    if (p && p.found) {
+      urlEl.value = p.found;
+      const hint = p.wrongSecret
+        ? `控制器在 ${p.found}，但**密钥不对**——去 Clash Verge 的「设置 → 外部控制」重新复制 Secret`
+        : p.needSecret
+          ? `控制器在 ${p.found}，**需要密钥**——去 Clash Verge 的「设置 → 外部控制」复制 Secret 填到「密钥」里`
+          : `已在 ${p.found} 找到控制器并自动填入地址，点「保存」再用`;
+      uiMsg(msgEl, `连不上：${r.error}\n${hint}`, false);
     } else {
-      uiMsg(msgEl, "连接失败：" + (r.error || "未知错误"), false);
+      const tried = (p && p.tried || []).map((t) => t.base.replace("http://", "")).join(" / ");
+      uiMsg(
+        msgEl,
+        `连不上：${r.error}\n试过 ${tried || "常见端口"} 都没有响应——确认 Clash Verge 里「外部控制」是开着的，并核对端口`,
+        false
+      );
     }
   });
 
