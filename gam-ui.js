@@ -224,7 +224,8 @@ function initClashBox() {
       slowMs: Math.max(500, Math.min(60000, parseInt(slowEl.value, 10) || 5000)),
       blacklistMinutes: Math.max(1, Math.min(1440, parseInt(blockEl.value, 10) || 10)),
     };
-    if (cfg.enabled) {
+    // 不管开关开没开，只要填了地址就申请授权：否则「测试连接」会直接 Failed to fetch
+    if (cfg.baseUrl) {
       const perm = await ensureHostPermission(cfg.baseUrl);
       if (!perm.ok) return { ok: false, error: perm.error };
     }
