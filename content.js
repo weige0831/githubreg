@@ -338,14 +338,17 @@ async function handleRateLimit(task) {
 }
 
 // 盯着页面：限流提示常常是首屏之后才出现的，出现就立刻处理
+// 一次页面加载只处理一次（页面级标记），否则同一次刷新会被重复计数
 function watchRateLimit(task) {
   if (window.__ghAutoRegRateLimitWatch) return;
   window.__ghAutoRegRateLimitWatch = true;
   let ticks = 0;
   const timer = setInterval(async () => {
     if (++ticks > 18) return clearInterval(timer); // 最多盯 90 秒
+    if (window.__ghAutoRegRateLimitHandled) return clearInterval(timer); // 本次加载已处理过
     if (!RATE_LIMIT_RE.test(document.body.innerText)) return;
     clearInterval(timer);
+    window.__ghAutoRegRateLimitHandled = true;
     await handleRateLimit(task);
   }, 5000);
 }
