@@ -32,6 +32,7 @@ const SKIP_FILE_RE = /^\.tmp-/;
 const LOCK_FILE = path.join(os.tmpdir(), "githubreg-push.lock");
 const PATTERN_FILE = path.join(ROOT, ".zcode", "private-patterns.json");
 const log = (...args) => console.error(...args);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ===== 私人信息闸门 =====
 // 推送前扫一遍工作区：命中 .zcode/private-patterns.json 里的任何一条就拒绝推送，
@@ -259,11 +260,34 @@ async function pushViaGit() {
   if (commit.code !== 0) return { ok: false, reason: (commit.err || commit.out).trim() };
 
   const push = await run(git, ["push", "origin", `HEAD:${BRANCH}`]);
-  if (push.code !== 0) return { ok: false, reason: (push.err || push.out).trim() };
+  if (push.code !== 0) {
+    // GitHub 的 HTTPS 偶尔会被重置，重试一次再决定是否交给 API 兜底
+    log("· git push 失败，3 秒后重试：" + (push.err || push.out).trim().split(/\r?\n/)[0]);
+    await sleep(3000);
+    const retry = await run(git, ["push", "origin", `HEAD:${BRANCH}`]);
+    if (retry.code !== 0) return { ok: false, reason: (retry.err || retry.out).trim() };
+  }
 
   const head = await run(git, ["rev-parse", "--short", "HEAD"]);
   log(`✓ 已推送 ${changed.length} 个文件（git ${head.out.trim()}）：${changed.slice(0, 10).join(", ")}${changed.length > 10 ? " …" : ""}`);
   return { ok: true, pushed: true };
+}
+
+// API 兜底推送之后，本地 git 可能留下一个没推上去的提交（远端已有等价内容）。
+// 不处理的话下次 git push 会因为「远端有你没有的提交」一直被拒。内容一致就自动对齐。
+async function reconcileGitAfterApiPush() {
+  if (!fs.existsSync(path.join(ROOT, ".git"))) return;
+  const git = findGit();
+  await run(git, ["fetch", "origin"]);
+  const local = await run(git, ["rev-parse", "HEAD^{tree}"]);
+  const remote = await run(git, ["rev-parse", `origin/${BRANCH}^{tree}`]);
+  if (local.code !== 0 || remote.code !== 0) return;
+  if (local.out.trim() !== remote.out.trim()) {
+    log("· 本地 git 与远端内容不一致，未自动对齐（下次 git push 前先 git pull）");
+    return;
+  }
+  const reset = await run(git, ["reset", "--mixed", `origin/${BRANCH}`]);
+  if (reset.code === 0) log("· 远端内容与本地一致，已把本地分支对齐到远端（历史不再分叉）");
 }
 
 // ===== 方式二：GitHub API（不需要本机 git）=====
@@ -327,6 +351,7 @@ try {
         throw e;
       }
     }
+    await reconcileGitAfterApiPush();
   }
 } catch (e) {
   ok = false;
