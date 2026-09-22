@@ -531,6 +531,18 @@ check("没写 secret 的配置也能读（密钥留空）", noSecret.ok && noSec
 const emptyCfg = await send({ type: "clash_import_config", text: "mode: rule\n" });
 check("不是 Clash 配置时明确报错", !emptyCfg.ok && /external-controller/.test(emptyCfg.error || ""), String(emptyCfg.error));
 
+// 用例 25：还没拿到本地地址权限时，要指出「没授权」而不是含糊的"连不上"
+api.permitted = false;
+api.clashDeadPorts = new Set();
+api.clashSecretPorts = new Set();
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9097", secret: "", group: "" } });
+const notPermitted = await send({ type: "clash_test" });
+check("没授权时明确回报 permitted=false", !notPermitted.ok && notPermitted.permitted === false,
+  `permitted=${notPermitted.permitted}`);
+check("没授权时不去瞎探测（省时间）", notPermitted.probe === null, JSON.stringify(notPermitted.probe));
+api.permitted = true;
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
