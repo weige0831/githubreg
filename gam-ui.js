@@ -338,8 +338,104 @@ function initClashBox() {
   bgSend("clash_get_status").then((r) => render(r.status));
 }
 
+// ===== 💾 配置备份 =====
+// 扩展没法往任意目录写文件（Chrome 的安全边界），能"静默落盘"的只有浏览器下载目录。
+// 所以备份固定写到 <下载目录>\githubreg-backup\config.json；本机已把这个目录做成指向
+// AppData 的目录联接（见 README），文件物理上就在 AppData 里，卸载重装扩展也还在。
+// 每次保存参数都会自动备份一次，恢复时点「从备份恢复」选那个文件即可。
+const BACKUP_FILE = "githubreg-backup/config.json";
+const BACKUP_KEYS = ["gamConfig", "mailConfig", "clashConfig", "gamState", "gamUsedNames"];
+
+// 各个配置区块注册自己的刷新函数，恢复备份后统一刷新界面
+const uiRefreshers = [];
+function registerRefresher(fn) {
+  uiRefreshers.push(fn);
+}
+async function refreshAllBoxes() {
+  for (const fn of uiRefreshers) {
+    try {
+      await fn();
+    } catch (e) {}
+  }
+}
+
+async function backupConfig() {
+  const data = await chrome.storage.local.get(BACKUP_KEYS);
+  const payload = { app: "githubreg", version: 1, savedAt: new Date().toISOString(), data };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })
+  );
+  try {
+    await chrome.downloads.download({
+      url,
+      filename: BACKUP_FILE,
+      conflictAction: "overwrite",
+      saveAs: false,
+    });
+    await chrome.storage.local.set({ configBackupAt: payload.savedAt });
+    return { ok: true, at: payload.savedAt };
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+}
+
+// 备份失败不该影响保存参数本身，所以统一吞掉异常
+function backupQuietly() {
+  backupConfig().catch(() => {});
+}
+
+function initBackupBox() {
+  if (!$id("backupBox")) return;
+  const stateEl = $id("backupState");
+  const msgEl = $id("backupMsg");
+
+  async function render() {
+    const { configBackupAt } = await chrome.storage.local.get("configBackupAt");
+    stateEl.textContent = configBackupAt
+      ? `最近备份 ${new Date(configBackupAt).toLocaleString()}`
+      : "还没备份过";
+  }
+
+  $id("backupNow").addEventListener("click", async () => {
+    uiMsg(msgEl, "备份中...");
+    let r;
+    try {
+      r = await backupConfig();
+    } catch (e) {
+      r = { ok: false, error: String(e.message || e) };
+    }
+    await render();
+    uiMsg(msgEl, r.ok ? `已备份到 ${BACKUP_FILE}` : "备份失败：" + (r.error || "未知错误"), r.ok);
+  });
+
+  $id("backupRestore").addEventListener("click", () => $id("backupFile").click());
+  $id("backupFile").addEventListener("change", async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = ""; // 同一个文件能再选一次
+    if (!file) return;
+    try {
+      const payload = JSON.parse(await file.text());
+      const data = payload && payload.data;
+      if (!data || typeof data !== "object") throw new Error("这个文件里没有配置数据");
+      const patch = {};
+      for (const k of BACKUP_KEYS) if (data[k] !== undefined) patch[k] = data[k];
+      if (!Object.keys(patch).length) throw new Error("备份里没有任何参数");
+      await chrome.storage.local.set(patch);
+      await refreshAllBoxes();
+      await render();
+      const when = payload.savedAt ? new Date(payload.savedAt).toLocaleString() + " 的备份" : "无时间戳的备份";
+      uiMsg(msgEl, `已恢复 ${when}：${Object.keys(patch).join(" / ")}`, true);
+    } catch (e) {
+      uiMsg(msgEl, "恢复失败：" + String(e.message || e), false);
+    }
+  });
+
+  render();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   initManagerBox();
   initMailBox();
   initClashBox();
+  initBackupBox();
 });
