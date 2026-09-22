@@ -113,6 +113,10 @@
         <button id="clashSwitch">换一个节点</button>
         <button id="clashClear">清空黑名单</button>
       </div>
+      <div class="gam-actions">
+        <button id="clashImport">从配置文件导入</button>
+      </div>
+      <input id="clashFile" type="file" accept=".yaml,.yml,.txt" style="display:none" />
       <div class="gam-hint">注意：「控制器」要填 Clash Verge 里「外部控制」的地址（默认 127.0.0.1:9097）和它的密钥——<b>不是</b>「端口设置」那个 7890，7890 是代理端口，不是接口端口。点「测试连接」会自动探测并填入。</div>
       <div class="gam-hint">换掉的节点会拉黑一段时间，期间不再选它。分组建议用「手动选择 / Selector」类型——url-test 这类分组 Clash 会自己改回去，拉黑就不生效了。</div>
       <div id="clashMsg" class="gam-msg"></div>
