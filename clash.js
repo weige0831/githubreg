@@ -129,7 +129,8 @@ async function clashSwitch(reason) {
           ? `（延迟 ${best.delay}ms，原因：${reason}）`
           : `（原因：${reason}，候选都测不通，先换上）`)
     );
-    return { ok: true, group, from: now, to: pick, delay: best ? best.delay : null };
+    // switched 要显式带上：调用方（定时检查）靠它决定要不要刷新页面
+    return { ok: true, switched: true, group, from: now, to: pick, delay: best ? best.delay : null };
   } catch (e) {
     const msg = String(e.message || e);
     notify("换节点失败：" + msg);
