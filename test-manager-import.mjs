@@ -206,6 +206,10 @@ globalThis.fetch = async (url, opts = {}) => {
 };
 
 // ---------- 加载真实 background.js ----------
+// Service Worker 里的 importScripts 在 Node 里没有，用同样的方式把 clash.js 加载进同一作用域
+globalThis.importScripts = (...files) => {
+  for (const f of files) vm.runInThisContext(fs.readFileSync(f, "utf8"), { filename: f });
+};
 vm.runInThisContext(fs.readFileSync("background.js", "utf8"), { filename: "background.js" });
 const onMessage = listeners[0];
 const send = (msg) => new Promise((res) => { onMessage(msg, {}, res); });
