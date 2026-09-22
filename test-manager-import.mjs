@@ -78,6 +78,7 @@ const api = {
   clashDeadPorts: new Set(),        // 模拟没开的端口
   clashSecretPorts: new Set(),      // 模拟像 Clash Verge 那样需要密钥的端口
   clashSecretValue: "verge-secret",
+  permitted: true,                  // 扩展有没有被授权访问本地地址
 };
 globalThis.fetch = async (url, opts = {}) => {
   const full = String(url);
