@@ -295,11 +295,10 @@ async function handleBlockedPage(task, kind) {
   await setTask(task);
   const n = task.resetCount;
 
-  if (n > 7) {
-    log(kind + ' 已重置 ' + (n - 1) + ' 次仍过不去：这个号放弃、不写进账户列表，继续下一个');
-    log('（凭据备查：邮箱 ' + task.email + ' / 用户名 ' + task.username + ' / 密码 ' + task.password + '）');
-    await finish(task, { save: false });
-    return true;
+  // 没有次数上限：一直重试到过去为止（用户要求，别丢掉这个号）。
+  // 每 7 次报一次进度 + 凭据，万一是浏览器指纹之类换节点也没用的原因，人工可以照着登进去。
+  if (n > 1 && (n - 1) % 7 === 0) {
+    log(`（已重试 ${n - 1} 次仍没过，继续重试中。如需人工介入，凭据：邮箱 ${task.email} / 用户名 ${task.username} / 密码 ${task.password}）`);
   }
 
   log('🚧 检测到 ' + kind + '（第 ' + n + ' 次）：拉黑当前节点并换一个 + 清空 GitHub cookie，然后从头开跑');
