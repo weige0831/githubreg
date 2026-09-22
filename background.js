@@ -303,7 +303,17 @@ async function onRegistrationDone(account) {
   } catch (e) {
     notify("导入管理器异常: " + String(e.message || e));
   }
-  await saveAccount({ ...account, gamGroup: gam.group || "", gamNote: gam.note || "" });
+
+  // 关了「保存到本地」时：只有确实进了管理器的账户才不留副本，
+  // 没进管理器（没 token / 导入失败 / 配置没填）的一律本地留一份，避免直接丢号
+  const cfg = await getGamConfig();
+  if (!cfg.saveLocal && gam.ok) {
+    notify("（已导入管理器，按设置不在本地留副本）");
+  } else {
+    await saveAccount({ ...account, gamGroup: gam.group || "", gamNote: gam.note || "" });
+    if (!cfg.saveLocal) notify("⚠️ 这次没进管理器，已在本地保留副本（防丢号）");
+  }
+
   const queue = await getQueue();
   if (queue && queue.left > 0) {
     queue.left -= 1;
@@ -339,6 +349,7 @@ const GAM_DEFAULT = {
   masterPassword: "",
   apiKey: "", // 填了就用 X-API-Key，不再需要管理密码
   groupSize: 10,
+  saveLocal: true, // 关掉 = 只导入管理器，本地不留明文副本（导入失败时仍会本地保留，防丢号）
 };
 // 去掉易混字符（l/o/0/1），避免手抄分组名时看错
 const GROUP_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789";
@@ -461,6 +472,19 @@ async function makeGroupName() {
   throw new Error("生成分组名失败：连续 20 次都撞名");
 }
 
+// 累计已导入数：单独记，不依赖本地账户列表
+// （关了「保存到本地」或手动清空列表后，面板上的进度仍然是对的）
+async function bumpImportedCount(delta = 1) {
+  const state = await getGamState();
+  if (state.importedCount == null) {
+    const accounts = await getAccounts();
+    state.importedCount = accounts.filter((a) => a.gamNote).length; // 首次以本地记录为基数
+  }
+  state.importedCount += delta;
+  await chrome.storage.local.set({ gamState: state });
+  return state.importedCount;
+}
+
 // 导入一个账户；失败抛异常，由调用方决定重试/入队
 async function importAccountToManager(account) {
   if (!account || !account.token) throw new Error("没有 token");
@@ -486,6 +510,7 @@ async function importAccountToManager(account) {
   // 只有真正导入成功才推进编号，失败重试时复用同一个备注，保证组内 0~9 不留空
   state.index += 1;
   await chrome.storage.local.set({ gamState: state });
+  await bumpImportedCount(1);
   notify(
     `📥 已导入管理器：${(created && created.github_login) || account.username || "账户"}` +
       `（分组 ${state.group}，备注 ${note}）`
@@ -576,6 +601,8 @@ async function gamStatus() {
   const accounts = await getAccounts();
   const { gamPending = [] } = await chrome.storage.local.get("gamPending");
   const full = !state.group || state.index >= cfg.groupSize;
+  const imported =
+    state.importedCount == null ? accounts.filter((a) => a.gamNote).length : state.importedCount;
   return {
     enabled: cfg.enabled,
     baseUrl: cfg.baseUrl,
@@ -583,11 +610,13 @@ async function gamStatus() {
     apiKey: cfg.apiKey,
     authMode: cfg.apiKey ? "API Key" : "管理密码",
     groupSize: cfg.groupSize,
+    saveLocal: cfg.saveLocal !== false,
+    localCount: accounts.length,
     group: state.group,
     index: state.index,
     nextNote: full ? "（下一个账户时新建分组）" : `${state.group}-${state.index}`,
     pending: gamPending.length,
-    imported: accounts.filter((a) => a.gamNote).length,
+    imported,
   };
 }
 

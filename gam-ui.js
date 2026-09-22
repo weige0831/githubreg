@@ -47,6 +47,7 @@ function initManagerBox() {
   const passEl = $id("gamPass");
   const keyEl = $id("gamApiKey");
   const sizeEl = $id("gamSize");
+  const localEl = $id("gamSaveLocal");
   const stateEl = $id("gamState");
   const msgEl = $id("gamMsg");
 
@@ -57,10 +58,12 @@ function initManagerBox() {
     passEl.value = s.masterPassword || "";
     keyEl.value = s.apiKey || "";
     sizeEl.value = s.groupSize || 10;
+    localEl.checked = s.saveLocal !== false;
     const parts = [`已导入 ${s.imported} 个`];
     if (s.enabled) {
       parts.push(`下一备注 ${s.nextNote}`, `鉴权 ${s.authMode}`);
       if (s.pending) parts.push(`待重试 ${s.pending}`);
+      if (s.saveLocal === false) parts.push(`本地 ${s.localCount} 个`);
     } else {
       parts.unshift("已关闭");
     }
@@ -74,6 +77,7 @@ function initManagerBox() {
       masterPassword: passEl.value.trim(),
       apiKey: keyEl.value.trim(),
       groupSize: Math.max(1, Math.min(100, parseInt(sizeEl.value, 10) || 10)),
+      saveLocal: localEl.checked,
     };
     const perm = await ensureHostPermission(cfg.baseUrl);
     if (!perm.ok) return { ok: false, error: perm.error };

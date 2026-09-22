@@ -295,6 +295,37 @@ check("清理时关掉了多余标签页", calls.includes("tabs.remove"), calls.
 check("开跑前不额外做一次无用的跳转", !calls.includes("tabs.update"), calls.join(" → "));
 check("超大数量会被夹到上限（防手滑）", (await send({ type: "start", count: 999999 })).count === 999, "");
 
+// 用例 14：关掉「本地也存一份」→ 进了管理器的号不再留本地副本
+const importedBefore = (await send({ type: "gam_get_status" })).status.imported;
+await send({ type: "gam_set_config", config: { saveLocal: false } });
+await send({ type: "done", account: { ...acct(31), token: "key_valid_31" } });
+let local31 = (await localAccounts()).find((a) => a.email === "gh_test31@example.com");
+let st14 = (await send({ type: "gam_get_status" })).status;
+check("导入成功的号不在本地留副本", !local31, local31 ? "竟然存了" : "未存（符合设置）");
+check("管理器里确实有这个号", api.accounts.some((a) => a.token === "key_valid_31"));
+check("进度计数照旧往前走", st14.imported === importedBefore + 1, `${importedBefore} → ${st14.imported}`);
+check("状态里标明本地不留副本", st14.saveLocal === false && st14.localCount !== undefined, `localCount=${st14.localCount}`);
+
+// 用例 15：同一个设置下，没进管理器的号必须本地留一份（防丢号）
+await send({ type: "done", account: { ...acct(32), token: "" } }); // 没有 token → 进不了管理器
+let local32 = (await localAccounts()).find((a) => a.email === "gh_test32@example.com");
+check("没 token 的号仍然本地保留", !!local32, local32 ? local32.username : "丢了");
+const pendingBefore15 = (await send({ type: "gam_get_status" })).status.pending;
+api.down = true;
+await send({ type: "done", account: { ...acct(33), token: "key_valid_33" } }); // 管理器挂了 → 进待重试
+api.down = false;
+let local33 = (await localAccounts()).find((a) => a.email === "gh_test33@example.com");
+check("导入失败的号仍然本地保留", !!local33, local33 ? local33.username : "丢了");
+check("导入失败的号同时进待重试队列", (await send({ type: "gam_get_status" })).status.pending === pendingBefore15 + 1, "");
+await send({ type: "gam_retry_pending" }); // 管理器恢复后补导入
+local33 = (await localAccounts()).find((a) => a.email === "gh_test33@example.com");
+check("补导入成功后本地这条记录补上了分组备注", !!local33.gamNote, String(local33.gamNote));
+
+// 用例 16：打开「本地也存一份」→ 恢复原来的行为
+await send({ type: "gam_set_config", config: { saveLocal: true } });
+await send({ type: "done", account: { ...acct(34), token: "key_valid_34" } });
+check("打开后本地照旧留一份", !!(await localAccounts()).find((a) => a.email === "gh_test34@example.com"));
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 

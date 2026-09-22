@@ -47,6 +47,10 @@
         <input id="gamSize" type="number" min="1" max="100" />
         <span>个（备注 分组名-0 … 分组名-9）</span>
       </label>
+      <label class="gam-row">
+        <input id="gamSaveLocal" type="checkbox" />
+        <span>本地也存一份账户</span>
+      </label>
       <div class="gam-actions">
         <button id="gamSave">保存</button>
         <button id="gamTest">测试连接</button>
@@ -56,6 +60,7 @@
         <button id="gamRetry">补导入</button>
       </div>
       <div class="gam-hint">填了 API Key 就用 Key 鉴权（长期有效）；管理密码只在生成 Key 或没填 Key 时使用</div>
+      <div class="gam-hint">取消「本地也存一份」= 只导入管理器，本地不留明文副本；没拿到 token 或导入失败的号仍会本地留一份，避免丢号</div>
       <div id="gamMsg" class="gam-msg"></div>
     </div>
   </details>
