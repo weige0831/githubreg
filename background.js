@@ -644,6 +644,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 开跑前先清一遍环境：上一批（或上次浏览）留下的 GitHub 登录态会让第一个号卡在首页
           notify("🧹 先清理环境：清除 GitHub 登录态 + 关掉多余标签页...");
           await cleanupBeforeNext({ openGithub: false });
+          await clashHealthCheck("开跑之前"); // 节点不行就先换掉再开始
+          startClashAlarm(); // 批量期间每分钟检查一次节点速度
           await sleep(1000);
           const info = await startOne();
           notify(count > 1 ? `开始批量注册：共 ${count} 个` : "开始注册");
