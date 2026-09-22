@@ -17,7 +17,22 @@ const EMAIL_TAKEN_RE =
   /already associated|already registered|already been taken|already taken|invalid email/i;
 
 // GitHub 限流（429）的几种页面提示
-const RATE_LIMIT_RE = /too many (requests|attempts)|rate limit|whoa there|try again (in|later)/i;
+const RATE_LIMIT_RE =
+  /too many (requests|attempts)|rate limit|whoa there|try again (in|later)|请求过多|请求太频繁|操作过于频繁|尝试次数过多|过于频繁/i;
+
+// GitHub 的「人机验证 / 访问暂时受限」拦截页（中英文都认）：
+//   访问暂时受限 / 我不是机器人 / verify you are human / temporarily restricted ...
+// 这一页没有表单也没有验证码框，流程走不下去，按限流一样处理（换节点 + 刷新重试）
+const BOT_CHALLENGE_RE =
+  /访问暂时受限|暂时受限|我不是机器人|verify you are human|are you a robot|temporarily restricted|unusual (activity|traffic)/i;
+
+// 返回命中的类型（""=没命中），顺手把两类拦截合并成一个入口
+function limitKind() {
+  const body = document.body ? document.body.innerText : "";
+  if (BOT_CHALLENGE_RE.test(body)) return "人机验证拦截";
+  if (RATE_LIMIT_RE.test(body)) return "限流";
+  return "";
+}
 
 // ===== 创建 token 页面 =====
 // classic token 页：scopes 由 URL 参数预勾选，页面只需填 Note -> 选 No expiration -> Generate
@@ -276,15 +291,15 @@ function backToFlow(task) {
 //   ④ 还限流 → 把当前节点拉黑（时长见面板配置），换下一个节点，回到 ② 重复；
 //   一直到不出现限流为止，全程不需要人工。
 // 注意：每次页面加载只算一次刷新（页面内观察器不会重复计数）。
-async function handleRateLimit(task) {
+async function handleRateLimit(task, kind = "限流") {
   const rl = task.rateLimit || { node: "", refresh: 0, waited: false };
 
   // ① 刚发现限流：直接拉黑当前节点 + 换下一个节点
   if (!rl.node) {
     rl.refresh = 0;
     rl.waited = false;
-    log("🚦 检测到 GitHub 限流：拉黑当前节点并换下一个节点，然后在它上面连续刷新重试");
-    const r = await send({ type: "clash_switch", reason: "GitHub 限流：拉黑当前节点并切换", reload: true, rotate: true, blacklist: true });
+    log(`🚦 检测到 GitHub ${kind}：拉黑当前节点并换下一个节点，然后在它上面连续刷新重试`);
+    const r = await send({ type: "clash_switch", reason: `GitHub ${kind}：拉黑当前节点并切换`, reload: true, rotate: true, blacklist: true });
     if (r && r.ok) {
       rl.node = r.to || "(当前节点)";
       task.rateLimit = rl;
@@ -301,7 +316,7 @@ async function handleRateLimit(task) {
     rl.refresh += 1;
     task.rateLimit = rl;
     await setTask(task);
-    log(`🔄 第 ${rl.refresh}/10 次刷新重试（节点：${rl.node}）...`);
+    log(`🔄 第 ${rl.refresh}/10 次刷新重试（${kind}，节点：${rl.node}）...`);
     backToFlow(task);
     return true;
   }
@@ -312,7 +327,7 @@ async function handleRateLimit(task) {
     rl.refresh = 0;
     task.rateLimit = rl;
     await setTask(task);
-    log(`已刷新 10 次仍被限流，等 1 分钟后在「${rl.node}」上继续刷新重试...`);
+    log(`已刷新 10 次仍被${kind}，等 1 分钟后在「${rl.node}」上继续刷新重试...`);
     await sleep(60000);
     backToFlow(task);
     return true;
@@ -323,8 +338,8 @@ async function handleRateLimit(task) {
   rl.waited = false;
   task.rateLimit = rl;
   await setTask(task);
-  log(`「${rl.node}」刷新 10 次 + 等待 1 分钟仍被限流：拉黑它并换下一个节点继续重试`);
-  const r2 = await send({ type: "clash_switch", reason: "限流：拉黑后换下一个节点", reload: true, rotate: true, blacklist: true });
+  log(`「${rl.node}」刷新 10 次 + 等待 1 分钟仍被${kind}：拉黑它并换下一个节点继续重试`);
+  const r2 = await send({ type: "clash_switch", reason: `${kind}：拉黑后换下一个节点`, reload: true, rotate: true, blacklist: true });
   if (r2 && r2.ok) {
     rl.node = r2.to || "(当前节点)";
     task.rateLimit = rl;
@@ -347,10 +362,11 @@ function watchRateLimit(task) {
   const timer = setInterval(async () => {
     if (++ticks > 18) return clearInterval(timer); // 最多盯 90 秒
     if (window.__ghAutoRegRateLimitHandled) return clearInterval(timer); // 本次加载已处理过
-    if (!RATE_LIMIT_RE.test(document.body.innerText)) return;
+    const kind = limitKind();
+    if (!kind) return;
     clearInterval(timer);
     window.__ghAutoRegRateLimitHandled = true;
-    await handleRateLimit(task);
+    await handleRateLimit(task, kind);
   }, 5000);
 }
 
@@ -745,9 +761,10 @@ async function finish(task) {
   log(`页面加载: ${location.pathname}（表单=${hasEmail} 验证码框=${hasCodeInput} 验证页=${isVerification} 首页=${hasSignup} token页=${isTokenPage}）`);
 
   // 0) GitHub 限流：按「换节点 → 同节点刷 10 次 → 等 1 分钟再刷 10 次 → 拉黑换下一个」循环处理
-  if (RATE_LIMIT_RE.test(document.body.innerText)) {
+  const blocked = limitKind();
+  if (blocked) {
     window.__ghAutoRegRateLimitHandled = true; // 这次页面加载算一次刷新，别让观察器重复计数
-    await handleRateLimit(task);
+    await handleRateLimit(task, blocked);
     return;
   }
   // 没有限流提示 = 这次过来了，清掉重试状态（下次再遇到限流会从头开始一轮）
