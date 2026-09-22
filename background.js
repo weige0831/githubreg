@@ -920,6 +920,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ...r, reloaded, status: await clashStatus() });
         break;
       }
+      case "clear_github_session": {
+        // 清掉 GitHub 的 cookie + localStorage（只清 github.com，不动其它站点的登录态），
+        // 用于遇到「访问暂时受限」时把会话重置干净、从头跑
+        try {
+          await chrome.browsingData.remove(
+            { origins: ["https://github.com"] },
+            { cookies: true, localStorage: true }
+          );
+          notify("🧹 已清空 GitHub cookie / localStorage（会话重置）");
+          sendResponse({ ok: true });
+        } catch (e) {
+          notify("清空 GitHub 会话失败: " + String(e));
+          sendResponse({ ok: false, error: String(e) });
+        }
+        break;
+      }
       case "mail_get_status": {
         sendResponse({ ok: true, status: await mailStatus() });
         break;

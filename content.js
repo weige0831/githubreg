@@ -285,6 +285,52 @@ function backToFlow(task) {
   location.href = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
 }
 
+// ===== 「访问暂时受限」/ 卡住 的处理：清 cookie 从头开跑（不走换节点那套）=====
+// 按用户要求：这类页面先重置浏览器会话，再看能不能过去。
+//   · 第 1~3 次：只清 GitHub 会话（cookie + localStorage），然后从首页重开
+//   · 第 4~7 次：连节点一起换（清会话解决不了 IP 层面的判定）
+//   · 超过 7 次：这个号放弃（按「无 token」保存并继续下一个），避免整批卡在一个号上
+async function handleBlockedPage(task, kind) {
+  task.resetCount = (task.resetCount || 0) + 1;
+  await setTask(task);
+  const n = task.resetCount;
+
+  if (n > 7) {
+    log(kind + ' 已重置 ' + (n - 1) + ' 次仍过不去：这个号先放弃，保存账户（无 token）继续下一个');
+    await finish(task);
+    return true;
+  }
+
+  log('🚧 检测到 ' + kind + '（第 ' + n + ' 次）：清空 GitHub cookie 后从头开跑' + (n >= 4 ? '（并换节点）' : ''));
+  const r = await send({ type: 'clear_github_session' });
+  if (!r || !r.ok) log('清 GitHub 会话失败：' + ((r && r.error) || '未知原因') + '，仍然继续重开');
+
+  if (n >= 4) {
+    // 清会话解决不了 IP 层面的判定，这时连节点一起换（拉黑当前节点）
+    const sw = await send({ type: 'clash_switch', reason: kind + '：清会话 + 换节点', rotate: true, blacklist: true });
+    if (sw && sw.ok) log('已换节点：' + (sw.from || '?') + ' → ' + (sw.to || '?') + '（旧节点已拉黑）');
+    else log('换节点没成功：' + ((sw && sw.error) || '未知原因'));
+    log('等 30 秒再重开，避免连着打 GitHub...');
+    await sleep(30000);
+  }
+
+  if (task.stage === 'token') {
+    // 已经登录、正在做 token 的阶段：清了 cookie 等于登出，只能换个新号重来
+    log('当前在 token 阶段，会话已重置 → 换一个新邮箱重开这个位置');
+    await send({ type: 'new_account', attempts: task.recoverAttempts || 0 });
+    return true;
+  }
+
+  log('从 GitHub 首页重新开始这个号的注册流程');
+  location.href = 'https://github.com/';
+  return true;
+}
+
+// 限流页走换节点那套，其它拦截/卡住走清会话那套
+function handleBlocked(task, kind) {
+  if (kind === '限流') return handleRateLimit(task, kind);
+  return handleBlockedPage(task, kind);
+}
 // 遇到限流的处理节奏（按用户要求）：
 //   ① 一出现限流就**直接拉黑当前节点并换下一个节点**，页面重新打开；
 //   ② 在**同一个（新）节点上连续刷新 10 次**；
@@ -382,7 +428,7 @@ function watchStuck(task) {
     clearInterval(timer);
     window.__ghAutoRegRateLimitHandled = true;
     log(`⏳ 这个页面超过 ${limitMin} 分钟没有任何进展：按拦截/限流处理（拉黑换节点 + 重新打开页面）`);
-    await handleRateLimit(task, "页面卡住");
+    await handleBlocked(task, "页面卡住");
   }, 15000);
 }
 
@@ -414,7 +460,7 @@ function watchRateLimit(task) {
     if (kind) {
       clearInterval(timer);
       window.__ghAutoRegRateLimitHandled = true;
-      await handleRateLimit(task, kind);
+      await handleBlocked(task, kind);
       return;
     }
 
@@ -426,7 +472,7 @@ function watchRateLimit(task) {
         clearInterval(timer);
         window.__ghAutoRegRateLimitHandled = true;
         log(`⚠️ ${location.pathname} 上既没有表单也没有按钮，已持续 ${(need * 5) / 60} 分钟：当成被拦截处理`);
-        await handleRateLimit(task, "页面异常（没有可操作元素）");
+        await handleBlocked(task, "页面异常（没有可操作元素）");
         return;
       }
     } else {
@@ -840,12 +886,13 @@ async function finish(task) {
   const blocked = limitKind();
   if (blocked) {
     window.__ghAutoRegRateLimitHandled = true; // 这次页面加载算一次刷新，别让观察器重复计数
-    await handleRateLimit(task, blocked);
+    await handleBlocked(task, blocked);
     return;
   }
   // 没有限流提示 = 这次过来了，清掉重试状态（下次再遇到限流会从头开始一轮）
-  if (task.rateLimit) {
+  if (task.rateLimit || task.resetCount) {
     delete task.rateLimit;
+    task.resetCount = 0;
     await setTask(task);
   }
   // 限流提示常常是首屏之后才渲染出来的（日志里就遇到过：先"无需处理"，2 秒后才出现提示），
