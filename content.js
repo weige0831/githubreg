@@ -273,7 +273,7 @@ function backToFlow(task) {
 //   ① 一出现限流就**直接拉黑当前节点并换下一个节点**，页面重新打开；
 //   ② 在**同一个（新）节点上连续刷新 10 次**；
 //   ③ 10 次后还限流 → 等 1 分钟，在当前节点再刷新 10 次；
-//   ④ 还限流 → 把当前节点拉黑 10 分钟，换下一个节点，回到 ② 重复；
+//   ④ 还限流 → 把当前节点拉黑（时长见面板配置），换下一个节点，回到 ② 重复；
 //   一直到不出现限流为止，全程不需要人工。
 // 注意：每次页面加载只算一次刷新（页面内观察器不会重复计数）。
 async function handleRateLimit(task) {
@@ -318,12 +318,12 @@ async function handleRateLimit(task) {
     return true;
   }
 
-  // ④ 等过一轮还限流：拉黑当前节点 10 分钟，换下一个节点，回到 ② 继续
+  // ④ 等过一轮还限流：拉黑当前节点，换下一个节点，回到 ② 继续
   rl.refresh = 0;
   rl.waited = false;
   task.rateLimit = rl;
   await setTask(task);
-  log(`「${rl.node}」刷新 10 次 + 等待 1 分钟仍被限流：拉黑它 10 分钟，换下一个节点继续重试`);
+  log(`「${rl.node}」刷新 10 次 + 等待 1 分钟仍被限流：拉黑它并换下一个节点继续重试`);
   const r2 = await send({ type: "clash_switch", reason: "限流：拉黑后换下一个节点", reload: true, rotate: true, blacklist: true });
   if (r2 && r2.ok) {
     rl.node = r2.to || "(当前节点)";

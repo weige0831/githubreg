@@ -240,7 +240,7 @@ function initClashBox() {
       secretEl.value = s.secret || "";
       groupEl.value = s.group || "";
       slowEl.value = s.slowMs || 5000;
-      blockEl.value = s.blacklistMinutes || 10;
+      blockEl.value = s.blacklistMinutes || 25;
     }
     if (!s.enabled) {
       stateEl.textContent = "未启用";
@@ -260,7 +260,7 @@ function initClashBox() {
       secret: secretEl.value.trim(),
       group: groupEl.value.trim(),
       slowMs: Math.max(500, Math.min(60000, parseInt(slowEl.value, 10) || 5000)),
-      blacklistMinutes: Math.max(1, Math.min(1440, parseInt(blockEl.value, 10) || 10)),
+      blacklistMinutes: Math.max(1, Math.min(1440, parseInt(blockEl.value, 10) || 25)),
     };
     // 不管开关开没开，只要填了地址就申请授权：否则「测试连接」会直接 Failed to fetch
     if (cfg.baseUrl) {

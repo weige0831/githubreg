@@ -457,7 +457,7 @@ api.clashSwitches.length = 0;
 const sw = await send({ type: "clash_switch", reason: "GitHub 限流" });
 check("换节点成功并挑最快的候选", sw.ok && sw.to === "JP-02" && api.clashNow === "JP-02", `${sw.from} → ${sw.to}（延迟 ${sw.delay}）`);
 check("换节点写进了 Clash（PUT 分组）", api.clashSwitches.some((s) => s.name === "JP-02" && s.group === api.clashGroup), JSON.stringify(api.clashSwitches));
-check("旧节点被拉黑（默认 10 分钟）", (await send({ type: "clash_get_status" })).status.blacklistCount === 1,
+check("旧节点被拉黑（默认 25 分钟）", (await send({ type: "clash_get_status" })).status.blacklistCount === 1,
   `黑名单 ${(await send({ type: "clash_get_status" })).status.blacklistCount} 个`);
 
 api.clashDelays = { "SG-03": 500, "US-04": 700, "HK-01": 100 };

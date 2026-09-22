@@ -8,7 +8,7 @@
 // 触发场景：
 //   1) 页面出现 GitHub 限流（too many requests）→ 拉黑当前节点 + 换节点 + 刷新页面；
 //   2) 当前节点测不通 / 延迟超过阈值 → 同样换掉（批量进行时每分钟检查一次）。
-// 被换掉的节点会进黑名单（默认 10 分钟），期间不会再被选中。
+// 被换掉的节点会进黑名单（默认 25 分钟），期间不会再被选中。
 
 const CLASH_DEFAULT = {
   enabled: false,
@@ -16,7 +16,7 @@ const CLASH_DEFAULT = {
   secret: "",
   group: "", // 留空 = 自动挑一个 Selector 分组
   slowMs: 5000, // 延迟超过它就算「太慢」
-  blacklistMinutes: 10,
+  blacklistMinutes: 25,
   testUrl: "https://github.com/",
 };
 
