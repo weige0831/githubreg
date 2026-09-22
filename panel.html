@@ -149,6 +149,9 @@
         <button id="backupNow">立即备份</button>
         <button id="backupRestore">从备份恢复</button>
       </div>
+      <div class="gam-actions">
+        <button id="permGrant">一键授权所有地址</button>
+      </div>
       <input id="backupFile" type="file" accept=".json,application/json" style="display:none" />
       <div class="gam-hint">每次保存参数都会自动备份到 <b>下载目录\githubreg-backup\config.json</b>（本机这个目录已映射到 AppData，物理文件在 <b>%LOCALAPPDATA%\githubreg-backup</b>）。卸载重装扩展后点「从备份恢复」选它即可。备份只含参数，不含账户列表和待重试队列。</div>
       <div id="backupMsg" class="gam-msg"></div>

@@ -556,6 +556,25 @@ check("没授权时不去瞎探测（省时间）", notPermitted.probe === null,
 api.permitted = true;
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
+
+// 用例 26：没授权时状态里要如实标出来（否则用户只看到一句 Failed to fetch）
+api.permitted = false;
+await send({ type: "gam_set_config", config: { enabled: true, baseUrl: "http://manager.test", masterPassword: api.adminPassword } });
+const st26 = (await send({ type: "gam_get_status" })).status;
+check("管理器状态上报 permitted=false", st26.permitted === false, "permitted=" + st26.permitted);
+const mail26 = await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
+check("邮局状态上报 permitted=false", mail26.status.permitted === false, "permitted=" + mail26.status.permitted);
+
+// 用例 27：启动自检——有未授权的自定义地址时要明确告警
+logs.length = 0;
+await startupListeners[0]();
+const warn = logs.find((l) => /还没授权/.test(l)) || "";
+check("启动自检指出未授权的地址", /管理器|邮局/.test(warn), warn.slice(0, 70));
+api.permitted = true;
+logs.length = 0;
+await startupListeners[0]();
+check("都授权后不再告警", !logs.some((l) => /还没授权/.test(l)), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 

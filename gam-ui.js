@@ -456,6 +456,46 @@ function initBackupBox() {
     uiMsg(msgEl, r.ok ? `已备份到 ${BACKUP_FILE}` : "备份失败：" + (r.error || "未知错误"), r.ok);
   });
 
+  // 一键授权：管理器 / 邮局 / Clash 控制器三个地址一次申请完（Chrome 只弹一个窗）
+  $id("permGrant").addEventListener("click", async () => {
+    uiMsg(msgEl, "正在申请授权...");
+    const { gamConfig, mailConfig, clashConfig } = await chrome.storage.local.get([
+      "gamConfig",
+      "mailConfig",
+      "clashConfig",
+    ]);
+    const urls = [
+      gamConfig && gamConfig.baseUrl,
+      mailConfig && mailConfig.apiUrl,
+      clashConfig && clashConfig.baseUrl,
+    ].filter(Boolean);
+    const origins = [
+      ...new Set(
+        urls
+          .map((u) => {
+            try {
+              const x = new URL(u);
+              return `${x.protocol}//${x.hostname}/*`; // 权限模式不带端口，覆盖该主机所有端口
+            } catch (e) {
+              return "";
+            }
+          })
+          .filter(Boolean)
+      ),
+    ];
+    if (!origins.length) {
+      uiMsg(msgEl, "还没有需要授权的地址：先在对应区块填地址并保存", false);
+      return;
+    }
+    try {
+      const granted = await chrome.permissions.request({ origins });
+      uiMsg(msgEl, granted ? `已授权：${origins.join("、")}` : "授权被拒绝：这些地址的请求会被浏览器拦掉", granted);
+      if (granted) await refreshAllBoxes();
+    } catch (e) {
+      uiMsg(msgEl, "申请失败：" + String(e.message || e), false);
+    }
+  });
+
   $id("backupRestore").addEventListener("click", () => $id("backupFile").click());
   $id("backupFile").addEventListener("change", async (ev) => {
     const file = ev.target.files && ev.target.files[0];
