@@ -705,6 +705,12 @@ check("丢弃也照常推进批次（队列有变化或已清空）", JSON.strin
 const src35 = fs.readFileSync("content.js", "utf8");
 check("超上限时用 save:false（并把凭据打进日志备查）", /await finish\(task, \{ save: false \}\)/.test(src35) && /凭据备查/.test(src35), "");
 
+// 用例 36（静态不变式）：清会话路径每次都要「拉黑当前节点并换下一个」
+check("清会话路径里有拉黑换节点", /clash_switch[\s\S]{0,120}blacklist: true/.test(src35) && /handleBlockedPage/.test(src35), "");
+check("换节点在清会话之前（先换 IP 再清会话）",
+  src35.indexOf("clash_switch") < src35.indexOf("clear_github_session"), "");
+check("仍保留 7 次上限后丢弃", /n > 7/.test(src35), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
