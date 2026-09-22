@@ -681,6 +681,17 @@ check("结构判断只看流程页", /signup\|login\|account_verifications/.test
 check("结构异常阈值 60 秒（循环内）/ 90 秒（首次）", /task\.rateLimit \? 12 : 18/.test(contentSrc), "");
 check("没有可操作元素时按拦截处理", /页面异常（没有可操作元素）/.test(contentSrc), "");
 
+// 用例 34：遇到「访问暂时受限」/卡住时清 GitHub 会话（而不是换节点）
+calls.length = 0;
+const sess = await send({ type: "clear_github_session" });
+check("清会话接口可用", sess.ok === true, JSON.stringify(sess));
+check("确实调了浏览数据清理（只清 github.com）", calls.includes("browsingData.remove"), calls.join(" → "));
+const src34 = fs.readFileSync("content.js", "utf8");
+check("分流：只有限流页走换节点，其它走清会话", /if \(kind === .限流.\) return handleRateLimit/.test(src34) && /handleBlockedPage\(task, kind\)/.test(src34), "");
+check("清会话只清 cookie + localStorage（不动其它站点）", /origins: \["https:\/\/github\.com"\][\s\S]{0,120}cookies: true, localStorage: true/.test(fs.readFileSync("background.js", "utf8")), "");
+check("重置有上限（超过 7 次按无 token 收尾）", /n > 7/.test(src34) && /已重置/.test(src34), "");
+check("token 阶段清会话后换新邮箱重开", /task\.stage === .token.[\s\S]{0,200}new_account/.test(src34), "");
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
