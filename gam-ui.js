@@ -257,6 +257,16 @@ function initClashBox() {
       return;
     }
     // 连不上时给点能直接照做的结论（Clash Verge 默认在 9097 且带随机密钥）
+    if (r.permitted === false) {
+      uiMsg(
+        msgEl,
+        `连不上：${r.error}\n` +
+          `**扩展还没被授权访问这个地址**——Chrome 会直接拦掉本地请求（看起来就像端口不通）。\n` +
+          `再点一次「保存」，弹出授权窗口时点「允许」，然后重新测试。`,
+        false
+      );
+      return;
+    }
     const p = r.probe;
     if (p && p.found) {
       urlEl.value = p.found;
