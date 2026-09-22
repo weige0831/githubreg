@@ -71,6 +71,7 @@ function initManagerBox() {
       localEl.checked = s.saveLocal !== false;
     }
     const parts = [`已导入 ${s.imported} 个`];
+    if (s.permitted === false) parts.push("⚠️ 未授权：点「保存」并允许");
     if (s.enabled) {
       parts.push(`下一备注 ${s.nextNote}`, `鉴权 ${s.authMode}`);
       if (s.pending) parts.push(`待重试 ${s.pending}`);
@@ -173,7 +174,8 @@ function initMailBox() {
       urlEl.value = s.apiUrl || "";
       domainEl.value = s.domain || "";
     }
-    stateEl.textContent = s.domain ? `域名 ${s.domain}` : "未配置";
+    stateEl.textContent =
+      (s.domain ? `域名 ${s.domain}` : "未配置") + (s.permitted === false ? " · ⚠️ 未授权：点「保存」并允许" : "");
   }
 
   async function save() {

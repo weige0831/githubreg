@@ -408,7 +408,7 @@ let gamAuth = { jwt: "", exp: 0 };
 
 async function gamLogin(cfg) {
   if (!trimUrl(cfg.baseUrl)) throw new Error("未配置管理器地址（面板 → 📥 导入管理器）");
-  const resp = await fetch(`${trimUrl(cfg.baseUrl)}/api/auth/login`, {
+  const resp = await fetchWithPermitHint(`${trimUrl(cfg.baseUrl)}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ masterPassword: cfg.masterPassword }),
@@ -430,7 +430,7 @@ async function gamRequest(path, { method = "GET", body } = {}) {
   if (!base) throw new Error("未配置管理器地址（面板 → 📥 导入管理器）");
   const url = base + "/api" + path;
   const send = (jwt) =>
-    fetch(url, {
+    fetchWithPermitHint(url, {
       method,
       headers: {
         "Content-Type": "application/json",
@@ -650,6 +650,7 @@ async function gamStatus() {
     authMode: cfg.apiKey ? "API Key" : "管理密码",
     groupSize: cfg.groupSize,
     saveLocal: cfg.saveLocal !== false,
+    permitted: cfg.baseUrl ? await originPermitted(cfg.baseUrl) : true,
     localCount: accounts.length,
     group: state.group,
     index: state.index,
@@ -661,8 +662,47 @@ async function gamStatus() {
 
 async function mailStatus() {
   const cfg = await getMailConfig();
-  return { apiUrl: cfg.apiUrl, domain: cfg.domain };
+  return {
+    apiUrl: cfg.apiUrl,
+    domain: cfg.domain,
+    permitted: cfg.apiUrl ? await originPermitted(cfg.apiUrl) : true,
+  };
 }
+
+// ===== 启动自检：自定义地址有没有拿到授权 =====
+// （扩展只能预授权 github.com；管理器/邮局/Clash 的地址是用户填的，没授权时请求会被 Chrome 拦掉）
+async function checkHostPermissions() {
+  try {
+    const [gam, mail, clash] = await Promise.all([getGamConfig(), getMailConfig(), getClashConfig()]);
+    const targets = [
+      ["管理器", gam.baseUrl],
+      ["邮局", mail.apiUrl],
+      ["Clash 控制器", clash.baseUrl],
+    ];
+    const missing = [];
+    for (const [name, url] of targets) {
+      if (!trimUrl(url)) continue;
+      if (await originPermitted(url)) continue;
+      let origin = url;
+      try {
+        origin = new URL(url).origin;
+      } catch (e) {}
+      missing.push(`${name}（${origin}）`);
+    }
+    if (missing.length) {
+      notify(
+        "⚠️ 这些地址还没授权，请求会被浏览器直接拦掉：" +
+          missing.join("、") +
+          " —— 去面板对应区块点「保存」，弹窗里点「允许」"
+      );
+    }
+  } catch (e) {
+    // 自检失败不影响使用
+  }
+}
+
+chrome.runtime.onStartup.addListener(checkHostPermissions);
+chrome.runtime.onInstalled.addListener(checkHostPermissions);
 
 // ===== 消息处理 =====
 

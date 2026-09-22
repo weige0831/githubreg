@@ -30,6 +30,8 @@ globalThis.chrome = {
     sendMessage: async (msg) => { if (msg && msg.type === "log") logs.push(msg.text); },
     getURL: (p) => "chrome-extension://test/" + p,
     onMessage: { addListener: (fn) => listeners.push(fn) },
+    onStartup: { addListener: (fn) => startupListeners.push(fn) },
+    onInstalled: { addListener: (fn) => startupListeners.push(fn) },
   },
   sidePanel: { setPanelBehavior: async () => {}, open: async () => {} },
   offscreen: { createDocument: async () => {} },
