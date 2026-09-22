@@ -14,6 +14,7 @@ const listeners = [];
 const startupListeners = []; // onStartup / onInstalled 注册的自检函数
 const logs = [];
 const calls = []; // 记录 chrome API 调用顺序，用来验证「先清理环境，再开新标签页」
+const navUrls = []; // 记录 tabs.update 导航到的地址
 const area = (name) => ({
   get: async (k) => {
     const o = store[name];
@@ -51,7 +52,8 @@ globalThis.chrome = {
     create: async () => { calls.push("tabs.create"); return { id: 1 }; },
     remove: async () => { calls.push("tabs.remove"); },
     query: async () => { calls.push("tabs.query"); return [{ id: 10 }, { id: 11 }]; },
-    update: async () => { calls.push("tabs.update"); },
+    update: async (id, props) => { calls.push("tabs.update"); navUrls.push((props && props.url) || ""); },
+    reload: async () => { calls.push("tabs.reload"); },
   },
   browsingData: { remove: async () => { calls.push("browsingData.remove"); } },
 };
@@ -71,6 +73,7 @@ const api = {
   keysCreated: [],         // 通过 POST /apikeys 建出来的 key
   mailCalls: [],           // 邮局收到的请求 { path, body }
   mailHost: "",
+  mailFailTimes: 0, // 让前 N 次建邮箱失败，用来测重试
   // ---- 假的 Clash 控制器 ----
   clashSwitches: [],       // 每次 PUT /proxies/{group} 记录 { group, name }
   clashDelays: {},         // 节点 -> 延迟；null/未设置 = 测不通
@@ -141,6 +144,7 @@ globalThis.fetch = async (url, opts = {}) => {
     api.mailCalls.push({ path, body, host });
     api.mailHost = host;
     if (path === "/api/v1/addresses") {
+      if (api.mailFailTimes > 0) { api.mailFailTimes--; throw new TypeError("fetch failed"); }
       const email = `${body.username}@${body.domain}`;
       return json(200, { email, token: "mail-token-1" });
     }
@@ -589,6 +593,40 @@ const sw28b = await send({ type: "clash_switch", reason: "手动切换" });
 check("非限流时按速度挑（不受 WARP 偏置影响）", sw28b.ok && sw28b.to === "JP-02", "换到 " + sw28b.to);
 api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
 api.clashDelays = {};
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
+
+// 用例 29：邮局抖动时自动重试开号（原来会直接中断整批）
+await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
+api.mailFailTimes = 1; // 第一次建邮箱失败，之后成功
+logs.length = 0;
+const started29 = await send({ type: "start", count: 2 });
+check("邮局首次失败会自动重试并成功开号", started29.ok && !!started29.email, JSON.stringify(started29).slice(0, 80));
+check("日志里有重试提示", logs.some((l) => /开新号失败（1\/3）/.test(l)), logs.filter((l) => /开新号/.test(l)).join(" | ").slice(0, 90));
+api.mailFailTimes = 0;
+
+// 用例 30：换节点后是导航到干净的 GET 地址，不用 chrome.tabs.reload（会弹"确认重新提交表单"）
+calls.length = 0;
+const { task: t0 } = await send({ type: "get_task" });
+await send({ type: "set_task", task: { ...t0, stage: "fill", tabId: 42 } });
+api.clashNow = "HK-01";
+api.clashNodes = ["HK-01", "JP-02"];
+api.clashDelays = { "JP-02": 100 };
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", clearBlacklist: true } });
+const sw30 = await send({ type: "clash_switch", reason: "GitHub 限流", reload: true });
+check("换节点后确实重新打开了页面", sw30.ok && sw30.reloaded === true, JSON.stringify({ reloaded: sw30.reloaded }));
+check("用的是 tabs.update 导航（不是 reload）", calls.includes("tabs.update") && !calls.includes("tabs.reload"), calls.join(" → "));
+const { task: t1 } = await send({ type: "get_task" });
+check("fill 阶段回到注册页", navUrls.includes("https://github.com/signup"), JSON.stringify(navUrls));
+
+await send({ type: "clash_set_config", config: { clearBlacklist: true } }); // 放开黑名单，否则没节点可换
+await send({ type: "set_task", task: { ...t1, stage: "token", tabId: 42 } });
+calls.length = 0;
+navUrls.length = 0;
+const sw30b = await send({ type: "clash_switch", reason: "手动", reload: true });
+const { task: t2 } = await send({ type: "get_task" });
+check("token 阶段回首页（首页自己会跳 token 页）", sw30b.ok && sw30b.reloaded === true && navUrls.includes("https://github.com/"),
+  "stage=" + t2.stage + " 导航到 " + JSON.stringify(navUrls));
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
 console.log("\n=== 管理器侧最终数据 ===");
