@@ -615,6 +615,36 @@ check("token 阶段回首页（首页自己会跳 token 页）", sw30b.ok && sw3
   "stage=" + t2.stage + " 导航到 " + JSON.stringify(navUrls));
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
 
+
+// 用例 28：限流重试用「按顺序换下一个 + 不拉黑」，升级时才拉黑
+api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
+api.clashNow = "HK-01";
+api.clashDelays = { "JP-02": 500, "SG-03": 100, "US-04": 50 };
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", clearBlacklist: true } });
+const rl1 = await send({ type: "clash_switch", reason: "GitHub 限流", rotate: true, blacklist: false });
+check("限流时按顺序换下一个（不是挑最快的）", rl1.ok && rl1.to === "JP-02", "换到 " + rl1.to + "（最快的是 SG-03 100ms 但没被选中）");
+check("快速重试阶段不拉黑节点", rl1.blacklisted === false && (await send({ type: "clash_get_status" })).status.blacklistCount === 0, "黑名单 " + (await send({ type: "clash_get_status" })).status.blacklistCount);
+
+const rl2 = await send({ type: "clash_switch", reason: "GitHub 限流", rotate: true, blacklist: false });
+check("继续往后走（JP-02 → SG-03）", rl2.ok && rl2.to === "SG-03", "换到 " + rl2.to);
+
+const rl3 = await send({ type: "clash_switch", reason: "限流等待后换下一个", rotate: true, blacklist: true });
+check("等过一轮还限流才拉黑当前节点", rl3.ok && rl3.blacklisted === true && (await send({ type: "clash_get_status" })).status.blacklistCount === 1,
+  "换到 " + rl3.to + "，黑名单 " + (await send({ type: "clash_get_status" })).status.blacklistCount + " 个");
+
+// 把当前节点设回 HK-01，并把紧邻的下一个（JP-02）拉黑，验证会跳过
+api.clashNow = "HK-01";
+await send({ type: "clash_set_config", config: { clearBlacklist: true } });
+api.clashNow = "JP-02";
+await send({ type: "clash_switch", reason: "拉黑 JP-02", rotate: true, blacklist: true }); // 从 JP-02 换走并拉黑它
+api.clashNow = "HK-01";
+const rl4 = await send({ type: "clash_switch", reason: "限流", rotate: true, blacklist: false });
+check("顺序换节点时跳过黑名单里的节点", rl4.ok && rl4.to === "SG-03", "换到 " + rl4.to + "（JP-02 在黑名单里被跳过）");
+
+api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
+api.clashDelays = {};
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
