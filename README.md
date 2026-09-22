@@ -98,12 +98,24 @@
 > 这个功能默认关闭，需要时在面板里打开并保存（会申请控制器地址的访问权限）。
 
 > **Clash Verge 怎么配最省事**：
+> 0. **先在 Verge 设置里打开「外部控制」开关**。关着的时候 Verge 会生成 `external-controller: ''`，
+>    内核根本不监听任何管理端口——这时怎么填都连不上，扩展导入配置时会直接点出这个原因。
+>    改完开关 Verge 会重启内核，端口才真正起来。
 > 1. 点区块里的「**从配置文件导入**」，选 Verge 的运行时配置
->    `%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\config.yaml`
->    （或任意含 `external-controller:` 的 Clash 配置）——地址和密钥会**自动读出并填好**，不用手抄。
+>    `%APPDATA%\io.github.clash-verge-rev.clash-verge-rev\clash-verge.yaml`
+>    （**内核真正加载的是这份**，以进程命令行的 `-f` 参数为准；目录里那个 `config.yaml` 可能是旧残留）
+>    ——地址和密钥会**自动读出并填好**，不用手抄。
 > 2. 也可以手动填：设置 → 「外部控制」那一行点开 `>`，里面有地址和密钥。
 >    注意**不要**填「端口设置」里的 `7890`——那是代理端口（浏览器走代理用的），不是接口端口；接口端口 Verge 默认是 `9097`。
 > 3. 地址填错或密钥不对时，点「测试连接」会**自动探测常见端口并给出结论**：在哪个端口找到了控制器、是缺密钥还是密钥写错了。
+
+> 自己从命令行排查（Windows 上很实用）：
+> ```bat
+> :: 内核加载的是哪份配置、有没有管理端口
+> powershell "(Get-CimInstance Win32_Process -Filter \"Name='verge-mihomo.exe'\").CommandLine"
+> netstat -ano | findstr :9097        :: 有 LISTENING 才说明接口起来了
+> curl -s http://127.0.0.1:9097/version   :: 返回 {"version":...} 就是通的
+> ```
 
 > 关于「直接调用内核」：`external-controller` 就是 Mihomo 内核自己的管理接口（Verge 的网页面板也是调它）。
 > 内核另外还开了一个 Windows 命名管道 `\\.\pipe\verge-mihomo`（配置里的 `external-controller-pipe`），不用端口和密钥，
