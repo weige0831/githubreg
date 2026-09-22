@@ -575,6 +575,22 @@ logs.length = 0;
 await startupListeners[0]();
 check("都授权后不再告警", !logs.some((l) => /还没授权/.test(l)), "");
 
+
+// 用例 28：限流时优先换到 WARP（要的是换出口 IP，不是换最快的）
+api.clashNodes = ["HK-01", "JP-02", "🔥 WARP", "US-04"];
+api.clashNow = "HK-01";
+api.clashDelays = { "HK-01": 100, "JP-02": 50, "🔥 WARP": 300, "US-04": 60 };
+await send({ type: "clash_set_config", config: { enabled: true, baseUrl: "http://127.0.0.1:9090", secret: "s", clearBlacklist: true } });
+const sw28 = await send({ type: "clash_switch", reason: "GitHub 限流" });
+check("限流时优先换到 WARP（哪怕它不是最快）", sw28.ok && sw28.to === "🔥 WARP", "换到 " + sw28.to + "（延迟 " + sw28.delay + "）");
+await send({ type: "clash_set_config", config: { clearBlacklist: true } });
+api.clashNow = "HK-01";
+const sw28b = await send({ type: "clash_switch", reason: "手动切换" });
+check("非限流时按速度挑（不受 WARP 偏置影响）", sw28b.ok && sw28b.to === "JP-02", "换到 " + sw28b.to);
+api.clashNodes = ["HK-01", "JP-02", "SG-03", "US-04"];
+api.clashDelays = {};
+await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
