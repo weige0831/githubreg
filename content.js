@@ -743,10 +743,16 @@ async function finish(task) {
 
   log(`页面加载: ${location.pathname}（表单=${hasEmail} 验证码框=${hasCodeInput} 验证页=${isVerification} 首页=${hasSignup} token页=${isTokenPage}）`);
 
-  // 0) GitHub 限流：换节点 + 刷新页面，然后继续（最多换 3 次，避免一直刷）
+  // 0) GitHub 限流：按「换节点 → 同节点刷 10 次 → 等 1 分钟再刷 10 次 → 拉黑换下一个」循环处理
   if (RATE_LIMIT_RE.test(document.body.innerText)) {
+    window.__ghAutoRegRateLimitHandled = true; // 这次页面加载算一次刷新，别让观察器重复计数
     await handleRateLimit(task);
     return;
+  }
+  // 没有限流提示 = 这次过来了，清掉重试状态（下次再遇到限流会从头开始一轮）
+  if (task.rateLimit) {
+    delete task.rateLimit;
+    await setTask(task);
   }
   // 限流提示常常是首屏之后才渲染出来的（日志里就遇到过：先"无需处理"，2 秒后才出现提示），
   // 所以再盯 90 秒，出现就立刻换节点刷新
