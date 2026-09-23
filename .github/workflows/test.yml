@@ -28,6 +28,10 @@ on:
         type: boolean
         required: false
         default: true
+      real_flow_minutes:
+        description: "真实流程最多跑几分钟（默认 15；只想抓现场截图可以填 6）"
+        required: false
+        default: "15"
 
 permissions:
   contents: read
