@@ -585,7 +585,9 @@ async function bumpImportedCount(delta = 1) {
 
 // 导入一个账户；失败抛异常，由调用方决定重试/入队
 async function importAccountToManager(account) {
-  if (!account || !account.token) throw new Error("没有 token");
+  // 不在这里卡 token：管理器服务端自己会校验（空 token 会被它拒），
+  // 客户端不重复服务端的规则——哪天服务端允许空 token，这里不用改也能用。
+  if (!account) throw new Error("没有账户数据");
   const cfg = await getGamConfig();
   const state = await getGamState();
   if (!state.group || state.index >= cfg.groupSize) {
@@ -639,10 +641,6 @@ async function importWithRetry(account) {
   if (!trimUrl(cfg.baseUrl)) {
     notify("⚠️ 未配置管理器地址，跳过导入（面板 → 📥 导入管理器里填一次并保存）");
     return { ok: false, skipped: "未配置地址" };
-  }
-  if (!account || !account.token) {
-    notify("⚠️ 该账户没有 token，跳过导入管理器");
-    return { ok: false, skipped: "无 token" };
   }
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
