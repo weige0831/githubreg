@@ -236,6 +236,24 @@ mklink /J "%USERPROFILE%\Downloads\githubreg-backup" "%LOCALAPPDATA%\githubreg-b
 > 如果 Chrome 拒绝往联接目录里写（报「备份失败」），删掉联接换成普通文件夹即可：
 > `rmdir "%USERPROFILE%\Downloads\githubreg-backup"`，备份会落在下载目录里，功能不受影响。
 
+## 测试与 CI
+
+仓库里有两个可直接跑的测试（**不依赖任何 npm 包**，Node 20+ 就行）：
+
+```bash
+node test-static.mjs           # 静态检查：manifest、引用完整性、弹窗/面板一致性、不留私人默认值
+node test-manager-import.mjs   # 逻辑测试：管理器导入、Clash 换节点、停止/重试、限流与拦截分流（140 项断言）
+```
+
+- `test-static.mjs`：查结构——manifest 是否 MV3、引用的文件是否都在、`gam-ui.js` 用到的 id 在弹窗和面板里是否一致、
+  **代码里有没有把私人服务地址/密码写成默认值**、推送脚本的私人信息闸门和 `.gitignore` 是否还在。
+- `test-manager-import.mjs`：把 `background.js` + `clash.js` 加载进 Node，桩掉 `chrome.*` API 和网络请求，
+  跑 140 项断言；为了让"重试等待"不拖时间，测试里把 `setTimeout` 压到 20ms，整套 **约 1 秒**跑完。
+
+**CI**：`.github/workflows/ci.yml` 在每次 push 到 `main` 和 PR 时自动跑这两个测试（Node 20 / 22 两档），
+每次约 15 秒。⚠️ **CI 只做构建与测试这两件事**——这个仓库不做任何与项目无关的自动化
+（GitHub Actions 的用途限制，也是账号与仓库安全的底线）。
+
 ## 文件结构
 
 ```
@@ -259,6 +277,8 @@ extension/
 ├── test-manager-import.mjs  # 管理器导入逻辑的离线测试（node test-manager-import.mjs）
 ├── clash.js                 # Clash 换节点：限流/节点太慢时自动切换 + 拉黑
 ├── push-to-github.mjs       # 推送脚本：把工作区同步到 GitHub（无需本机 git）
+├── test-static.mjs          # 静态检查（结构/引用/不留私人默认值）
+├── .github/workflows/ci.yml # CI：push 时自动跑两个测试
 ├── .gitignore
 └── icons/           # 扩展图标
 ```
