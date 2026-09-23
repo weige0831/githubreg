@@ -64,10 +64,13 @@ log(`测试用扩展副本: ${EXT}`);
 log(`预授权 host: ${hosts.join(", ")}`);
 
 // ---------- 2) 启动真实 Chrome ----------
-// 启动参数与 test-extension-loads.mjs 保持一致（那套在 Windows runner 上实测能起来）
+// 启动：与 test-extension-loads.mjs 同样的参数，但超时给足（并行 job 抢资源时 30 秒不够），
+// 而且只启动一次 —— 失败后残留的 Chrome 会拖垮第二次尝试（实测 EBUSY + 第二次握手挂死）。
 const baseOpts = {
   executablePath: CHROME,
   headless: false, // 装扩展必须用有界面的 Chrome
+  timeout: 180000,
+  protocolTimeout: 240000,
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
@@ -77,22 +80,13 @@ const baseOpts = {
     "--disable-gpu",
   ],
 };
-const attempts = [
-  { label: "命令行 --load-extension", opts: baseOpts },
-  { label: "enableExtensions + pipe（CDP）", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true } },
-];
 let browser = null;
-for (const a of attempts) {
-  let b = null;
-  try {
-    b = await puppeteer.launch(a.opts);
-    browser = b;
-    log(`Chrome 已启动（${a.label}）`);
-    break;
-  } catch (e) {
-    log(`启动失败（${a.label}）：${String((e && e.message) || e).slice(0, 120)}`);
-    try { if (b) await b.close(); } catch (e2) {}
-  }
+try {
+  browser = await puppeteer.launch(baseOpts);
+  log("Chrome 已启动");
+} catch (e) {
+  log(`FAIL  Chrome 起不来：${String((e && e.message) || e).slice(0, 140)}`);
+  process.exit(1);
 }
 
 const waitId = async (ms = 25000) => {

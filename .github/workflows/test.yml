@@ -96,6 +96,9 @@ jobs:
     name: 实际流程测试（真实注册一个号）
     runs-on: windows-latest
     timeout-minutes: 30
+    # 等前两个 job 跑完再跑：一是别和它们抢 runner 资源（会影响 Chrome 启动），
+    # 二是前面都过了才有必要真跑一遍注册
+    needs: [test, extension-load]
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_real_flow }}
     steps:
       - uses: actions/checkout@v4
