@@ -737,6 +737,14 @@ check("换节点在清会话之前（先换 IP 再清会话）",
   src35.indexOf("clash_switch") < src35.indexOf("clear_github_session"), "");
 check("清会话路径不再调用丢弃（无上限重试）", !/finish\(task, \{ save: false \}\)/.test(src35), "");
 check("每 7 次报一次进度与凭据", /\(n - 1\) % 7 === 0/.test(src35) && /凭据/.test(src35), "");
+// 用例 36b（静态不变式）：重试计数不能在被拦后的"从首页重开"里被清零
+// （首页上没有拦截提示 → 老代码在那儿 delete resetCount，于是每次都"第 1 次"、
+//   既不显示进度也不进入等待节奏，变成一秒一轮猛打 GitHub）
+check("重试计数只在流程页清零（首页不清）",
+  /const onFlowPage = hasEmail \|\| hasCodeInput \|\| isTokenPage \|\| isVerification/.test(src35) &&
+    /if \(onFlowPage && \(task\.rateLimit \|\| task\.resetCount\)\)/.test(src35), "");
+check("被拦重开之间有节奏（换不了节点等更久）",
+  /const ms = switched \? 15000 : 60000/.test(src35) && /n >= 2/.test(src35), "");
 
 // 用例 37：中途停止（不再开新号）+ 页面侧自动重试停下
 api.mailFailTimes = 0;
