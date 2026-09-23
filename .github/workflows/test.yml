@@ -1,0 +1,88 @@
+name: Test
+
+# 只做这件事：构建/测试这个仓库的代码。
+# 不跑任何与项目无关的自动化（那是 GitHub Actions 用途限制里的红线，也会连累仓库被处理）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 手动触发时可以临时传参（邮局 / 管理器）；也可以配成仓库 Secrets 长期使用
+  workflow_dispatch:
+    inputs:
+      mail_api_url:
+        description: "邮局地址（留空则跳过邮局检查，例如 https://mail.example.com）"
+        required: false
+        default: ""
+      mail_domain:
+        description: "邮箱域名（例如 example.com）"
+        required: false
+        default: ""
+      manager_base_url:
+        description: "管理器地址（留空则跳过管理器检查，例如 http://10.0.0.5:<端口>）"
+        required: false
+        default: ""
+      manager_password:
+        description: "管理器密码（建议改用 Secrets：MANAGER_PASSWORD）"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 测试（Windows）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 版本信息
+        run: node --version
+
+      - name: 静态检查（manifest / 引用完整性 / 不留私人默认值）
+        run: node test-static.mjs
+
+      - name: 逻辑测试（管理器导入、Clash 换节点、停止与重试、限流/拦截分流）
+        run: node test-manager-import.mjs
+
+      # 参数从 workflow 输入或 Secrets 来（都为空时脚本会自己跳过，不会报错）
+      - name: 集成检查（邮局 + 导入管理器，用扩展自己的代码连通）
+        env:
+          MAIL_API_URL: ${{ inputs.mail_api_url || secrets.MAIL_API_URL }}
+          MAIL_DOMAIN: ${{ inputs.mail_domain || secrets.MAIL_DOMAIN }}
+          MANAGER_BASE_URL: ${{ inputs.manager_base_url || secrets.MANAGER_BASE_URL }}
+          MANAGER_PASSWORD: ${{ inputs.manager_password || secrets.MANAGER_PASSWORD }}
+          MANAGER_API_KEY: ${{ secrets.MANAGER_API_KEY }}
+        run: node test-integration.mjs
+
+  extension-load:
+    name: 扩展装载测试（真实 Chrome）
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # 钉在 23.x：新版 puppeteer 会把 --load-extension 转成 CDP 调用，而那个接口老版 Chrome 没有
+      - name: 装 puppeteer-core（用现成的 Chrome，不下载浏览器）
+        run: npm install --no-save --no-package-lock puppeteer-core@23.11.1
+
+      # Chrome 137+ 移除了命令行装载未打包扩展，所以单独下一个仍支持的 Chrome for Testing 136
+      - name: 准备 Chrome 136（支持命令行装载未打包扩展）
+        shell: pwsh
+        run: |
+          npx --yes @puppeteer/browsers install chrome@136 --path "$env:USERPROFILE\cft" | Out-Null
+          $chrome = Get-ChildItem -Path "$env:USERPROFILE\cft" -Recurse -Filter chrome.exe | Select-Object -First 1
+          if (-not $chrome) { throw "没找到 chrome.exe" }
+          "CHROME_BIN=$($chrome.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $chrome.FullName --version
+
+      - name: 装扩展并验证
+        run: node test-extension-loads.mjs

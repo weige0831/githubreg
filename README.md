@@ -250,17 +250,34 @@ node test-manager-import.mjs   # 逻辑测试：管理器导入、Clash 换节�
 - `test-manager-import.mjs`：把 `background.js` + `clash.js` 加载进 Node，桩掉 `chrome.*` API 和网络请求，
   跑 140 项断言；为了让"重试等待"不拖时间，测试里把 `setTimeout` 压到 20ms，整套 **约 1 秒**跑完。
 
-**CI**：`.github/workflows/ci.yml` 在每次 push 到 `main`、PR，或手动触发（Actions 页面点 Run workflow /
-`gh workflow run ci.yml`）时跑三个任务：
+**CI**：`.github/workflows/test.yml`（**Windows runner**）在每次 push 到 `main`、PR，或手动触发时跑：
 
 | 任务 | 内容 | 耗时 |
 | --- | --- | --- |
-| 测试（Node 20 / 22） | `test-static.mjs` + `test-manager-import.mjs` 两档 Node 都跑 | 约 15 秒 |
-| 扩展装载测试 | 在真实 Chrome（虚拟显示）里**把扩展装上**，验证能打开面板/弹窗页、四个配置区块都在、无 JS 报错、后台 storage 可用 | 约 30 秒 |
+| 测试（Windows） | `test-static.mjs` + `test-manager-import.mjs` | 约 20 秒 |
+| 扩展装载测试 | 在真实 Chrome 里**把扩展装上**，验证面板/弹窗页能打开、四个配置区块都在、无 JS 报错、后台 storage 可用 | 约 40 秒 |
 
-> 扩展装载测试为什么要单独下一个 Chrome 136：新版 Chrome（137+）已禁止用命令行装载未打包扩展
-> （`--load-extension` 被移除），测试里改用仍支持它的 Chrome for Testing 136 跑，装的是**这个仓库的扩展本体**。⚠️ **CI 只做构建与测试这两件事**——这个仓库不做任何与项目无关的自动化
-（GitHub Actions 的用途限制，也是账号与仓库安全的底线）。
+### 手动触发时传参（邮局 / 管理器）
+
+Actions 页面点 **Run workflow** 时可以填四个参数（也可以配成仓库 **Secrets** 长期用，推荐）：
+
+| 输入 | 对应 Secret | 说明 |
+| --- | --- | --- |
+| `mail_api_url` | `MAIL_API_URL` | 邮局地址；填了就跑邮局检查 |
+| `mail_domain` | `MAIL_DOMAIN` | 邮箱域名 |
+| `manager_base_url` | `MANAGER_BASE_URL` | 管理器地址；填了就跑管理器检查 |
+| `manager_password` | `MANAGER_PASSWORD` | 管理器密码（用输入框会显示在运行记录里，建议用 Secret） |
+
+填了参数后，`test-integration.mjs` 会用**扩展自己的代码**去连通这两个服务：
+建一个临时邮箱（验证邮局地址+域名）、登录管理器并读一次分组（验证地址+凭据）。
+**不传参就自动跳过**，不会让 CI 变红。
+
+> GA 版本**舍弃了 🔀 Clash 换节点**（CI 里没有本机 Clash 控制器），集成测试里显式把 Clash 关掉，
+> 并断言它确实没被启用。同样的原因，**注册流程不会搬到 Actions 里跑**——那超出 Actions 的用途范围。
+
+> 扩展装载测试为什么要单独下 Chrome 136：Chrome 137+ 移除了命令行装载未打包扩展
+> （`--load-extension`），而 Puppeteer 新版会把它转成老版 Chrome 没有的 CDP 接口，
+> 所以这个任务用 Chrome for Testing 136 + `puppeteer-core@23.11.1` 的经典组合。
 
 ## 文件结构
 

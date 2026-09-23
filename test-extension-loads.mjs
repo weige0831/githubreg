@@ -45,14 +45,33 @@ const check = (name, ok, extra = "") => {
   if (!ok) failures++;
 };
 
-// 未打包扩展的 ID 是算出来的：sha256(绝对路径) 前 16 字节，每个半字节映射到 a-p
-const extId = [...crypto.createHash("sha256").update(EXT).digest().subarray(0, 16)]
+// 扩展 ID：优先从浏览器目标里读真实的（最可靠，跨平台都对）；
+// 读不到再按"sha256(路径) 前 16 字节映射到 a-p"的算法兜底（不同平台 Chrome 的路径规范化不一样，可能不准）
+const fallbackId = [...crypto.createHash("sha256").update(EXT).digest().subarray(0, 16)]
   .map((b) => b.toString(16).padStart(2, "0"))
   .join("")
   .split("")
   .map((ch) => String.fromCharCode(97 + parseInt(ch, 16)))
   .join("");
-const panelUrl = `chrome-extension://${extId}/panel.html`;
+
+function findExtensionId(browser) {
+  const t = browser.targets().find((x) => x.url().startsWith("chrome-extension://"));
+  if (!t) return "";
+  try {
+    return new URL(t.url()).host;
+  } catch (e) {
+    return "";
+  }
+}
+async function waitExtensionId(browser, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const id = findExtensionId(browser);
+    if (id) return id;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return "";
+}
 
 const baseOpts = {
   executablePath: chromePath,
@@ -71,11 +90,13 @@ const baseOpts = {
 // 能打开扩展自己的页面 = 扩展真的装上了
 // （比看 service worker 目标可靠：不同 Puppeteer 版本对这个的表现不一样）
 async function extensionUsable(browser) {
+  const id = await waitExtensionId(browser);
+  if (!id) return null;
   const page = await browser.newPage();
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      await page.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
-      return page;
+      await page.goto(`chrome-extension://${id}/panel.html`, { waitUntil: "domcontentloaded", timeout: 20000 });
+      return { page, id };
     } catch (e) {
       await new Promise((r) => setTimeout(r, 1500));
     }
@@ -92,14 +113,16 @@ const attempts = [
 let browser = null;
 let page = null;
 let usedLabel = "";
+let extId = "";
 for (const a of attempts) {
   let b = null;
   try {
     b = await puppeteer.launch(a.opts);
-    const p = await extensionUsable(b);
-    if (p) {
+    const r = await extensionUsable(b);
+    if (r) {
       browser = b;
-      page = p;
+      page = r.page;
+      extId = r.id;
       usedLabel = a.label;
       break;
     }
@@ -114,7 +137,7 @@ for (const a of attempts) {
 }
 
 if (!browser) {
-  console.log(`Chrome 路径: ${chromePath}`);
+  console.log(`Chrome 路径: ${chromePath}（按算法算出的 id 兜底值 ${fallbackId}）`);
   check("扩展已装载（能打开自己的面板页）", false, "两种装载机制都没成功");
   console.log("提示：Chrome 137+ 移除了命令行装扩展，需要 CHROME_BIN 指向仍支持的版本（如 Chrome for Testing 136）");
   process.exit(1);
