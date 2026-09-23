@@ -51,6 +51,8 @@ const browser = await puppeteer.launch({
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
+    // 新版 Chrome（137+）默认忽略 --load-extension，要用这个 feature 开关放开
+    "--disable-features=DisableLoadExtensionCommandLineSwitch",
     "--no-sandbox",
     "--no-first-run",
     "--disable-gpu",
@@ -58,15 +60,36 @@ const browser = await puppeteer.launch({
 });
 
 try {
-  // 1) 扩展的后台 service worker 有没有起来（等于 manifest 合法 + background.js 能解析执行）
+  // 未打包扩展的 ID 是算出来的：sha256(绝对路径) 前 16 字节，每个半字节映射到 a-p
+  const crypto = await import("node:crypto");
+  const computedId = [...crypto.createHash("sha256").update(EXT).digest().subarray(0, 16)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("")
+    .split("")
+    .map((ch) => String.fromCharCode(97 + parseInt(ch, 16)))
+    .join("");
+
+  const findSW = () =>
+    browser.targets().find((t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"));
   let swTarget = null;
-  for (let i = 0; i < 40 && !swTarget; i++) {
-    swTarget = browser.targets().find((t) => t.type() === "service_worker" && t.url().startsWith("chrome-extension://"));
+  for (let i = 0; i < 20 && !swTarget; i++) {
+    swTarget = findSW();
     if (!swTarget) await new Promise((r) => setTimeout(r, 500));
   }
-  check("扩展已装载，后台 service worker 起来了", !!swTarget, swTarget ? swTarget.url().split("/").pop() : "没找到 SW 目标");
-  const extId = swTarget ? new URL(swTarget.url()).host : "";
-  if (!extId) throw new Error("拿不到扩展 id，后面没法继续");
+  // 兜底：SW 是懒启动的，直接打开扩展自己的页面会把它拉起来
+  const extId = swTarget ? new URL(swTarget.url()).host : computedId;
+  if (!swTarget) {
+    const warm = await browser.newPage();
+    try {
+      await warm.goto(`chrome-extension://${extId}/panel.html`, { waitUntil: "domcontentloaded", timeout: 15000 });
+    } catch (e) {}
+    for (let i = 0; i < 20 && !swTarget; i++) {
+      swTarget = findSW();
+      if (!swTarget) await new Promise((r) => setTimeout(r, 500));
+    }
+  }
+  check("扩展已装载", !!swTarget || extId === computedId, `扩展 id=${extId}`);
+  check("后台 service worker 起来了（manifest 合法、background.js 能执行）", !!swTarget, swTarget ? swTarget.url().split("/").pop() : "没找到 SW 目标");
 
   // 2) 面板页能打开、关键区块渲染出来、没有 JS 报错
   const page = await browser.newPage();
