@@ -39,8 +39,13 @@ try { puppeteer = (await import("puppeteer-core")).default; } catch (e) { log("S
 
 // ---------- 1) 复制一份扩展，并把邮局/管理器地址写进必需权限（免得测不了权限弹窗）----------
 const EXT_SRC = process.cwd();
-const EXT = fs.mkdtempSync(path.join(os.tmpdir(), "ghreg-ext-"));
-const SKIP = new Set([".git", ".github", ".zcode", "node_modules", "icons"]);
+// 副本放在 runner 的临时目录（RUNNER_TEMP，形如 D:/a/_temp 这种干净短路径）。
+// 之前用 os.tmpdir() 得到的是 C:/Users/RUNNER~1/... 这种 8.3 短名路径，
+// 实测在 GA 上 Chrome 用 --load-extension 加载它时会卡住（拿不到 WS 端点）。
+const TMP_ROOT = process.env.RUNNER_TEMP || os.tmpdir();
+const EXT = fs.mkdtempSync(path.join(TMP_ROOT, "ghreg-ext-"));
+// 只跳过大而无用的目录，其余全拷 —— icons 必须留：manifest 引用它们，缺了扩展装不上
+const SKIP = new Set([".git", ".github", ".zcode", "node_modules"]);
 const copyDir = (from, to) => {
   fs.mkdirSync(to, { recursive: true });
   for (const e of fs.readdirSync(from, { withFileTypes: true })) {
