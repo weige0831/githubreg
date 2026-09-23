@@ -217,7 +217,7 @@ while (Date.now() < until) {
   }
   // 抓现场：20 秒时拍一张（看 /signup 到底长什么样），
   // 之后每次判定"被拦 / 卡住"再拍，每张至少间隔 60 秒，最多 10 张。
-  const looksBlocked = blocked || /页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理/.test(st.log || "");
+  const looksBlocked = blocked || /页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理|DataDome/.test(st.log || "");
   if (looksBlocked) blocked = true;
   if (shots === 0 && Date.now() - t0 > 20000) { lastShotAt = Date.now(); await shot("early"); }
   else if (looksBlocked && Date.now() - lastShotAt > 60000 && shots < 10) { lastShotAt = Date.now(); await shot("blocked"); }
@@ -226,7 +226,7 @@ while (Date.now() < until) {
 const final = await readState();
 // 域名侧页面上读不到文字时（GitHub 的挑战页常常是空的），用扩展自己的判定做证据：
 // 它反复报「页面异常 / 上既没有表单也没有按钮」＝ GitHub 没给正常的注册页 ＝ 环境（IP）被拦。
-if (/页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理/.test(final.log)) blocked = true;
+if (/页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理|DataDome/.test(final.log)) blocked = true;
 
 // 最后再拍一张，并把面板日志落盘（连同截图一起作为 artifact 传上去）
 await shot("final");
@@ -262,7 +262,7 @@ if (done && done.account) {
 
 log("\nFAIL  到时间还没拿到 token");
 if (blocked) {
-  log("原因：GitHub 对这个 runner 的 IP 返回了限流页 / 人机验证页 / 空白页（扩展日志里能看到「页面异常（没有可操作元素）」反复出现）");
+  log("原因：GitHub 对这个 runner 的 IP 返回了限流页 / 人机验证页（DataDome）/ 空白页 —— 扩展日志里能看到「人机验证（DataDome 滑块）」或「页面异常（没有可操作元素）」");
   log("      —— 这是**环境限制**（机房 IP 常见），不是代码问题。");
   log("代码侧的表现见上面的面板日志：应该能看到扩展自己识别 → 拉黑换节点 + 清 cookie → 从首页重开的循环。");
   await browser.close();
