@@ -19,6 +19,12 @@ globalThis.setTimeout = (fn, ms, ...rest) => realSetTimeout(fn, Math.min(Number(
 // setInterval 不动（content.js 的定时器不在这里跑），保持原样更安全
 void realSetInterval;
 
+// ---------- 从 workflow 传入的参数（不传就用默认值）----------
+// 注意：这些参数只用于测试断言，测试里不会真的去注册任何账号。
+const BATCH_COUNT = Math.min(999, Math.max(1, parseInt(process.env.BATCH_COUNT, 10) || 20));
+const GROUP_SIZE = Math.min(100, Math.max(1, parseInt(process.env.MANAGER_GROUP_SIZE, 10) || 10));
+console.log(`参数：连续注册数量=${BATCH_COUNT}，每组数量=${GROUP_SIZE}`);
+
 // ---------- chrome stub ----------
 const store = { local: {}, session: {} };
 const listeners = [];
@@ -400,9 +406,9 @@ check("生成 Key 用的是管理密码登录", api.keysCreated.includes("github
 // 用例 13：连续数量不再卡在 10；开始前先清理环境
 await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
 calls.length = 0;
-const started = await send({ type: "start", count: 20 });
+const started = await send({ type: "start", count: BATCH_COUNT });
 const q = (await send({ type: "get_queue" })).queue;
-check("连续 20 个能生效（上限已放开）", started.ok && started.count === 20 && q && q.total === 20,
+check(`连续 ${BATCH_COUNT} 个能生效（上限已放开）`, started.ok && started.count === BATCH_COUNT && q && q.total === BATCH_COUNT,
   `count=${started.count} queue.total=${q && q.total}`);
 check("开始前清了 GitHub 登录态", calls.includes("browsingData.remove"), calls.join(" → "));
 check("清理发生在开新标签页之前",
@@ -772,6 +778,22 @@ check("换节点后仍失败才进待重试队列", (await send({ type: "gam_get
 check("日志写明换了节点再试", logs.some((l) => /连续失败：换个节点再试一次/.test(l)), logs.filter((l) => /换个节点再试/.test(l)).slice(-1)[0] || "");
 api.down = false;
 await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist: true } });
+
+// 用例 43：每组数量按传入参数生效（默认 10）——G 个一组，第 G+1 个自动开新组
+store.local.gamState = { group: "", index: 0 }; // 从干净状态开始，方便数分组
+store.local.gamUsedNames = null;
+await send({ type: "gam_set_config", config: { enabled: true, baseUrl: "http://manager.test", masterPassword: api.adminPassword, groupSize: GROUP_SIZE, saveLocal: true, clearBlacklist: true } });
+const impBefore43 = api.accounts.length;
+for (let i = 0; i < GROUP_SIZE + 1; i++) await send({ type: "done", account: { ...acct(300 + i), token: `key_valid_${300 + i}` } });
+const st43 = (await send({ type: "gam_get_status" })).status;
+const g43 = st43.group;
+const in43 = api.accounts.slice(impBefore43).filter((a) => a.group === g43);
+check(`每组 ${GROUP_SIZE} 个：组内正好 ${GROUP_SIZE} 个、备注 ${g43}-0 … ${g43}-${GROUP_SIZE - 1}`,
+  in43.length === GROUP_SIZE && in43.map((a) => a.note).join(",") === Array.from({ length: GROUP_SIZE }, (_, i) => `${g43}-${i}`).join(","),
+  in43.map((a) => a.note.split("-").pop()).join(","));
+const others43 = api.accounts.slice(impBefore43).filter((a) => a.group !== g43);
+check(`每组 ${GROUP_SIZE} 个：第 ${GROUP_SIZE + 1} 个已开新分组`, others43.length === 1 && /-0$/.test(others43[0].note),
+  others43.map((a) => `${a.group}/${a.note}`).join(" , "));
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
