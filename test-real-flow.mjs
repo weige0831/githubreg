@@ -159,9 +159,39 @@ async function getLog() {
 }
 
 const BOT_RE = /访问暂时受限|我不是机器人|verify you are human|temporarily restricted|too many (requests|attempts)|rate limit|whoa there|请求过多|操作过于频繁/i;
+
+// ---------- 截图留证：出问题时把 GitHub 那边的页面 + 扩展面板都拍下来 ----------
+// 光看文字日志不够：页面上到底显示了什么（空白 / 人机验证 / 限流提示）必须看图。
+const SHOT_DIR = path.join(process.cwd(), "artifacts");
+fs.mkdirSync(SHOT_DIR, { recursive: true });
+let shots = 0;
+let lastShotAt = 0;
+async function shot(tag) {
+  shots++;
+  const n = String(shots).padStart(2, "0");
+  const base = path.join(SHOT_DIR, `${n}-${tag}`);
+  try {
+    const gh = browser.targets().find((t) => t.type() === "page" && t.url().includes("github.com"));
+    if (gh) {
+      const p = await gh.page().catch(() => null);
+      if (p) {
+        await p.screenshot({ path: `${base}-github.png`, fullPage: true })
+          .catch((e) => log("  （GitHub 页截图失败：" + String(e).slice(0, 70) + "）"));
+        const txt = await p.evaluate(() => document.body.innerText.slice(0, 4000)).catch(() => "");
+        const title = await p.title().catch(() => "");
+        fs.writeFileSync(`${base}-github.txt`, `URL: ${p.url()}\ntitle: ${title}\n\n${txt}`, "utf8");
+        fs.writeFileSync(`${base}-github.html`, await p.content().catch(() => ""), "utf8");
+      }
+    }
+    if (logPage && !logPage.isClosed()) await logPage.screenshot({ path: `${base}-panel.png` }).catch(() => {});
+  } catch (e) {}
+  log(`  📷 已截图 ${n}-${tag}`);
+}
+
 let done = null;
 let blocked = false;
 const until = Date.now() + DEADLINE_MIN * 60000;
+const t0 = Date.now();
 while (Date.now() < until) {
   await new Promise((r) => setTimeout(r, 5000));
   const st = await readState();
