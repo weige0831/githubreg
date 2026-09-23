@@ -346,10 +346,13 @@ async function handleBlockedPage(task, kind) {
   const r = await send({ type: 'clear_github_session' });
   if (!r || !r.ok) log('清 GitHub 会话失败：' + ((r && r.error) || '未知原因') + '，仍然继续重开');
 
-  // ③ 连着来几次之后加个等待，别一直猛打 GitHub
-  if (n >= 4) {
-    log('等 30 秒再重开，避免连着打 GitHub...');
-    await sleep(30000);
+  // ③ 节奏：第 1 次立刻重开（多半刚换到新节点，值得马上试）；之后每次都等一会儿。
+  //    换不了节点时（没开 Clash）等更久 —— 同一个 IP 猛打没有任何意义，只会一直被拦。
+  if (n >= 2) {
+    const switched = !!(sw && sw.ok);
+    const ms = switched ? 15000 : 60000;
+    log(`等 ${ms / 1000} 秒再重开${switched ? "" : "（换不了节点，同一个 IP 猛打没用，等久一点）"}...`);
+    await sleep(ms);
   }
 
   if (task.stage === 'token') {
