@@ -1005,10 +1005,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "clear_github_session": {
         // 清掉 GitHub 的 cookie + localStorage（只清 github.com，不动其它站点的登录态），
-        // 用于遇到「访问暂时受限」时把会话重置干净、从头跑
+        // 用于遇到「访问暂时受限」时把会话重置干净、从头跑。
+        // 顺带清 DataDome 的（GitHub 用它给 /signup 做滑块人机验证）：它会在浏览器里留一个
+        // "这台设备可疑"的 cookie，不清掉的话换多少 IP 都还是弹验证。
         try {
           await chrome.browsingData.remove(
-            { origins: ["https://github.com"] },
+            {
+              origins: [
+                "https://github.com",
+                "https://captcha-delivery.com",
+                "https://geo.captcha-delivery.com",
+              ],
+            },
             { cookies: true, localStorage: true }
           );
           notify("🧹 已清空 GitHub cookie / localStorage（会话重置）");
