@@ -61,16 +61,34 @@ log(`测试用扩展副本: ${EXT}`);
 log(`预授权 host: ${hosts.join(", ")}`);
 
 // ---------- 2) 启动真实 Chrome ----------
-const browser = await puppeteer.launch({
+const baseOpts = {
   executablePath: CHROME,
   headless: false, // 装扩展需要真实 Chrome
+  timeout: 120000, // Windows runner 上首次启动有时很慢
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
     "--disable-features=DisableLoadExtensionCommandLineSwitch",
     "--no-sandbox", "--no-first-run", "--disable-gpu", "--window-size=1280,900",
   ],
-});
+};
+// 与 test-extension-loads.mjs 一样试两种装载机制：老版 Chrome 认命令行开关，
+// 新版才认 CDP 的 enableExtensions；而且 Windows 上偶尔读不到 WS 端点，用 pipe 更稳。
+const attempts = [
+  { label: "命令行 --load-extension", opts: baseOpts },
+  { label: "enableExtensions + pipe", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true } },
+];
+let browser = null;
+for (const a of attempts) {
+  try {
+    browser = await puppeteer.launch(a.opts);
+    log(`Chrome 已启动（${a.label}）`);
+    break;
+  } catch (e) {
+    log(`启动失败（${a.label}）：${String((e && e.message) || e).slice(0, 120)}`);
+  }
+}
+if (!browser) { log("FAIL  Chrome 起不来（两种方式都试过）"); process.exit(1); }
 
 const waitId = async (ms = 25000) => {
   const until = Date.now() + ms;
