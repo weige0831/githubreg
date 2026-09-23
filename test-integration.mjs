@@ -16,6 +16,8 @@ const MAIL_DOMAIN = (process.env.MAIL_DOMAIN || "").trim();
 const MANAGER_BASE_URL = (process.env.MANAGER_BASE_URL || "").trim();
 const MANAGER_PASSWORD = (process.env.MANAGER_PASSWORD || "").trim();
 const MANAGER_API_KEY = (process.env.MANAGER_API_KEY || "").trim();
+const MANAGER_GROUP_SIZE = parseInt(process.env.MANAGER_GROUP_SIZE, 10) || 0;
+const MANAGER_SAVE_LOCAL = (process.env.MANAGER_SAVE_LOCAL || "").trim();
 
 if (!MAIL_API_URL && !MANAGER_BASE_URL) {
   console.log("SKIP  集成测试：没有传入邮局/管理器设置（workflow 里填 mail_api_url / manager_base_url，或配 Secrets）");
@@ -39,8 +41,8 @@ const store = {
       baseUrl: MANAGER_BASE_URL,
       masterPassword: MANAGER_PASSWORD,
       apiKey: MANAGER_API_KEY,
-      groupSize: 10,
-      saveLocal: true,
+      groupSize: MANAGER_GROUP_SIZE || 10,
+      saveLocal: MANAGER_SAVE_LOCAL ? MANAGER_SAVE_LOCAL !== "false" : true,
     },
     accounts: [],
   },
@@ -106,6 +108,12 @@ if (MANAGER_BASE_URL) {
     check("管理器可用（扩展代码登录并读到分组）", Array.isArray(groups), `分组 ${Array.isArray(groups) ? groups.length : "?"} 个`);
     const status = await globalThis.gamStatus();
     check("管理器配置被正确读取", status.baseUrl === MANAGER_BASE_URL && !!status.authMode, `鉴权=${status.authMode}`);
+    if (MANAGER_GROUP_SIZE) {
+      check(`每组数量按传入参数生效（${MANAGER_GROUP_SIZE}）`, status.groupSize === MANAGER_GROUP_SIZE, `groupSize=${status.groupSize}`);
+    }
+    if (MANAGER_SAVE_LOCAL) {
+      check(`本地保存开关按传入参数生效（${MANAGER_SAVE_LOCAL}）`, status.saveLocal === (MANAGER_SAVE_LOCAL !== "false"), `saveLocal=${status.saveLocal}`);
+    }
     check("GA 版本里 Clash 是关掉的（不碰本机控制器）", status.enabled === true && store.local.clashConfig.enabled === false, "");
   } catch (e) {
     check("管理器可用（扩展代码登录并读到分组）", false, String(e.message || e).slice(0, 100));
@@ -115,4 +123,6 @@ if (MANAGER_BASE_URL) {
 }
 
 console.log(failures ? `\nFAILED: ${failures}` : "\nALL PASS（集成检查：邮局 + 管理器）");
-process.exit(failures ? 1 : 0);
+// 不要用 process.exit()：这里的 fetch 是真实请求、连接池还在收尾，
+// 硬退出在 Windows 上会命中 libuv 断言（看起来像测试失败）。交给事件循环自然结束。
+process.exitCode = failures ? 1 : 0;

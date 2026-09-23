@@ -267,6 +267,13 @@ Actions 页面点 **Run workflow** 时可以填四个参数（也可以配成仓
 | `mail_domain` | `MAIL_DOMAIN` | 邮箱域名 |
 | `manager_base_url` | `MANAGER_BASE_URL` | 管理器地址；填了就跑管理器检查 |
 | `manager_password` | `MANAGER_PASSWORD` | 管理器密码（用输入框会显示在运行记录里，建议用 Secret） |
+| `manager_api_key` | `MANAGER_API_KEY` | 管理器 API Key（填了就优先用 Key 鉴权） |
+| `batch_count` | — | 连续注册数量（默认 20，1~999）：测试用它验证**队列初始化与上限夹取** |
+| `manager_group_size` | — | 每组数量（默认 10）：测试用它验证**分组滚动**（每 N 个一组、备注 -0…-(N-1)） |
+| `manager_save_local` | — | 本地也存一份（true / false）：测试验证这个开关被正确读取 |
+
+> 这些参数**只喂给测试**：`batch_count` 决定测试里造的队列长度、`manager_group_size` 决定测试里验证的分组滚动规则，
+> 它们**不会**让 CI 去注册任何账号。（在 Actions 里跑注册是超出用途范围的事，这个仓库不做。）
 
 填了参数后，`test-integration.mjs` 会用**扩展自己的代码**去连通这两个服务：
 建一个临时邮箱（验证邮局地址+域名）、登录管理器并读一次分组（验证地址+凭据）。

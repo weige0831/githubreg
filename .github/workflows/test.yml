@@ -26,6 +26,18 @@ on:
         description: "管理器密码（建议改用 Secrets：MANAGER_PASSWORD）"
         required: false
         default: ""
+      batch_count:
+        description: "连续注册数量（测试用：验证队列初始化与上限夹取，1~999）"
+        required: false
+        default: "20"
+      manager_group_size:
+        description: "每组数量（测试用：验证分组滚动，每 N 个一组）"
+        required: false
+        default: "10"
+      manager_save_local:
+        description: "本地也存一份账户（测试用：true / false）"
+        required: false
+        default: "true"
 
 permissions:
   contents: read
@@ -48,6 +60,9 @@ jobs:
         run: node test-static.mjs
 
       - name: 逻辑测试（管理器导入、Clash 换节点、停止与重试、限流/拦截分流）
+        env:
+          BATCH_COUNT: ${{ inputs.batch_count || '20' }}
+          MANAGER_GROUP_SIZE: ${{ inputs.manager_group_size || '10' }}
         run: node test-manager-import.mjs
 
       # 参数从 workflow 输入或 Secrets 来（都为空时脚本会自己跳过，不会报错）
@@ -58,6 +73,8 @@ jobs:
           MANAGER_BASE_URL: ${{ inputs.manager_base_url || secrets.MANAGER_BASE_URL }}
           MANAGER_PASSWORD: ${{ inputs.manager_password || secrets.MANAGER_PASSWORD }}
           MANAGER_API_KEY: ${{ secrets.MANAGER_API_KEY }}
+          MANAGER_GROUP_SIZE: ${{ inputs.manager_group_size || '10' }}
+          MANAGER_SAVE_LOCAL: ${{ inputs.manager_save_local || 'true' }}
         run: node test-integration.mjs
 
   extension-load:

@@ -782,18 +782,31 @@ await send({ type: "clash_set_config", config: { enabled: false, clearBlacklist:
 // 用例 43：每组数量按传入参数生效（默认 10）——G 个一组，第 G+1 个自动开新组
 store.local.gamState = { group: "", index: 0 }; // 从干净状态开始，方便数分组
 store.local.gamUsedNames = null;
+store.local.gamPending = []; // 清掉前面用例残留的待重试队列，免得补导入混进来
 await send({ type: "gam_set_config", config: { enabled: true, baseUrl: "http://manager.test", masterPassword: api.adminPassword, groupSize: GROUP_SIZE, saveLocal: true, clearBlacklist: true } });
 const impBefore43 = api.accounts.length;
-for (let i = 0; i < GROUP_SIZE + 1; i++) await send({ type: "done", account: { ...acct(300 + i), token: `key_valid_${300 + i}` } });
-const st43 = (await send({ type: "gam_get_status" })).status;
-const g43 = st43.group;
-const in43 = api.accounts.slice(impBefore43).filter((a) => a.group === g43);
-check(`每组 ${GROUP_SIZE} 个：组内正好 ${GROUP_SIZE} 个、备注 ${g43}-0 … ${g43}-${GROUP_SIZE - 1}`,
-  in43.length === GROUP_SIZE && in43.map((a) => a.note).join(",") === Array.from({ length: GROUP_SIZE }, (_, i) => `${g43}-${i}`).join(","),
-  in43.map((a) => a.note.split("-").pop()).join(","));
-const others43 = api.accounts.slice(impBefore43).filter((a) => a.group !== g43);
-check(`每组 ${GROUP_SIZE} 个：第 ${GROUP_SIZE + 1} 个已开新分组`, others43.length === 1 && /-0$/.test(others43[0].note),
-  others43.map((a) => `${a.group}/${a.note}`).join(" , "));
+for (let i = 0; i < GROUP_SIZE + 1; i++) {
+  await send({ type: "done", account: { ...acct(300 + i), token: `key_valid_${300 + i}` } });
+}
+const imported43 = api.accounts.slice(impBefore43);
+const byGroup43 = {};
+for (const a of imported43) (byGroup43[a.group] = byGroup43[a.group] || []).push(a.note);
+const groupNames43 = Object.keys(byGroup43);
+const sizes43 = Object.values(byGroup43).map((v) => v.length).sort((a, b) => b - a);
+check(`每组 ${GROUP_SIZE} 个：${GROUP_SIZE + 1} 个号正好分成两组（${GROUP_SIZE} 个 + 1 个）`,
+  groupNames43.length === 2 && sizes43.join(",") === `${GROUP_SIZE},1`,
+  JSON.stringify(byGroup43));
+const fullGroup43 = groupNames43.find((g) => byGroup43[g].length === GROUP_SIZE);
+if (fullGroup43) {
+  check(`每组 ${GROUP_SIZE} 个：满组的备注依次是 ${fullGroup43}-0 … ${fullGroup43}-${GROUP_SIZE - 1}`,
+    byGroup43[fullGroup43].join(",") === Array.from({ length: GROUP_SIZE }, (_, i) => `${fullGroup43}-${i}`).join(","),
+    byGroup43[fullGroup43].join(","));
+}
+const oneGroup43 = groupNames43.find((g) => byGroup43[g].length === 1);
+if (oneGroup43) {
+  check(`每组 ${GROUP_SIZE} 个：新组的第一条备注是 ${oneGroup43}-0`,
+    byGroup43[oneGroup43][0] === `${oneGroup43}-0`, byGroup43[oneGroup43][0]);
+}
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
