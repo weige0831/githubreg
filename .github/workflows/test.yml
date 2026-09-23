@@ -2,30 +2,19 @@ name: Test
 
 # 只做这件事：构建/测试这个仓库的代码。
 # 不跑任何与项目无关的自动化（那是 GitHub Actions 用途限制里的红线，也会连累仓库被处理）。
+#
+# 凭证一律走仓库 Secrets（Settings → Secrets and variables → Actions），不要用 workflow 输入传：
+# 输入会明文出现在运行日志里（公开仓库 = 人人可见），Secrets 会被自动打码成 ***。
+#   MAIL_API_URL / MAIL_DOMAIN                     邮局地址与域名
+#   MANAGER_BASE_URL / MANAGER_PASSWORD            管理器地址与密码（或只配 MANAGER_API_KEY）
+#   MANAGER_API_KEY                                可选：管理器的 API Key（配了就用它鉴权）
 
 on:
   push:
     branches: [main]
-  pull_request:
-  # 手动触发时可以临时传参（邮局 / 管理器）；也可以配成仓库 Secrets 长期使用
   workflow_dispatch:
     inputs:
-      mail_api_url:
-        description: "邮局地址（留空则跳过邮局检查，例如 https://mail.example.com）"
-        required: false
-        default: ""
-      mail_domain:
-        description: "邮箱域名（例如 example.com）"
-        required: false
-        default: ""
-      manager_base_url:
-        description: "管理器地址（留空则跳过管理器检查，例如 http://10.0.0.5:<端口>）"
-        required: false
-        default: ""
-      manager_password:
-        description: "管理器密码（建议改用 Secrets：MANAGER_PASSWORD）"
-        required: false
-        default: ""
+      # 只有无害的测试参数能从这里传；地址/密码一律走 Secrets
       batch_count:
         description: "连续注册数量（测试用：验证队列初始化与上限夹取，1~999）"
         required: false
@@ -34,10 +23,11 @@ on:
         description: "每组数量（测试用：验证分组滚动，每 N 个一组）"
         required: false
         default: "10"
-      manager_save_local:
-        description: "本地也存一份账户（测试用：true / false）"
+      run_real_flow:
+        description: "跑真实注册流程测试（会真的注册一个账号，约 3~8 分钟；被反爬拦住算环境问题）"
+        type: boolean
         required: false
-        default: "true"
+        default: true
 
 permissions:
   contents: read
@@ -65,16 +55,14 @@ jobs:
           MANAGER_GROUP_SIZE: ${{ inputs.manager_group_size || '10' }}
         run: node test-manager-import.mjs
 
-      # 参数从 workflow 输入或 Secrets 来（都为空时脚本会自己跳过，不会报错）
-      - name: 集成检查（邮局 + 导入管理器，用扩展自己的代码连通）
+      - name: 连通检查（邮局 + 管理器，用扩展自己的代码）
         env:
-          MAIL_API_URL: ${{ inputs.mail_api_url || secrets.MAIL_API_URL }}
-          MAIL_DOMAIN: ${{ inputs.mail_domain || secrets.MAIL_DOMAIN }}
-          MANAGER_BASE_URL: ${{ inputs.manager_base_url || secrets.MANAGER_BASE_URL }}
-          MANAGER_PASSWORD: ${{ inputs.manager_password || secrets.MANAGER_PASSWORD }}
+          MAIL_API_URL: ${{ secrets.MAIL_API_URL }}
+          MAIL_DOMAIN: ${{ secrets.MAIL_DOMAIN }}
+          MANAGER_BASE_URL: ${{ secrets.MANAGER_BASE_URL }}
+          MANAGER_PASSWORD: ${{ secrets.MANAGER_PASSWORD }}
           MANAGER_API_KEY: ${{ secrets.MANAGER_API_KEY }}
           MANAGER_GROUP_SIZE: ${{ inputs.manager_group_size || '10' }}
-          MANAGER_SAVE_LOCAL: ${{ inputs.manager_save_local || 'true' }}
         run: node test-integration.mjs
 
   extension-load:
@@ -101,5 +89,39 @@ jobs:
           "CHROME_BIN=$($chrome.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           & $chrome.FullName --version
 
-      - name: 装扩展并验证
+      - name: 装扩展并验证（能加载、后台能起来、面板能渲染）
         run: node test-extension-loads.mjs
+
+  real-flow:
+    name: 实际流程测试（真实注册一个号）
+    runs-on: windows-latest
+    timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_real_flow }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 装 puppeteer-core
+        run: npm install --no-save --no-package-lock puppeteer-core@23.11.1
+
+      - name: 准备 Chrome 136
+        shell: pwsh
+        run: |
+          npx --yes @puppeteer/browsers install chrome@136 --path "$env:USERPROFILE\cft" | Out-Null
+          $chrome = Get-ChildItem -Path "$env:USERPROFILE\cft" -Recurse -Filter chrome.exe | Select-Object -First 1
+          if (-not $chrome) { throw "没找到 chrome.exe" }
+          "CHROME_BIN=$($chrome.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          & $chrome.FullName --version
+
+      - name: 跑真实注册流程（注册 → 验证码 → 登录 → 建 token → 导入管理器）
+        env:
+          MAIL_API_URL: ${{ secrets.MAIL_API_URL }}
+          MAIL_DOMAIN: ${{ secrets.MAIL_DOMAIN }}
+          MANAGER_BASE_URL: ${{ secrets.MANAGER_BASE_URL }}
+          MANAGER_PASSWORD: ${{ secrets.MANAGER_PASSWORD }}
+          MANAGER_API_KEY: ${{ secrets.MANAGER_API_KEY }}
+          REAL_FLOW_MINUTES: "15"
+        run: node test-real-flow.mjs
