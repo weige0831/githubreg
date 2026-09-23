@@ -211,8 +211,9 @@ if (done && done.account) {
 
 log("\nFAIL  到时间还没拿到 token");
 if (blocked) {
-  log("原因：GitHub 对这个 runner 的 IP 返回了限流/人机验证页 —— 这是**环境限制**（机房 IP 常见），不是代码问题。");
-  log("代码侧的表现见上面的面板日志（有没有正确识别并进入重试循环）。");
+  log("原因：GitHub 对这个 runner 的 IP 返回了限流页 / 人机验证页 / 空白页（扩展日志里能看到「页面异常（没有可操作元素）」反复出现）");
+  log("      —— 这是**环境限制**（机房 IP 常见），不是代码问题。");
+  log("代码侧的表现见上面的面板日志：应该能看到扩展自己识别 → 拉黑换节点 + 清 cookie → 从首页重开的循环。");
   await browser.close();
   process.exit(2);
 }
