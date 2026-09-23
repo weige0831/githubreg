@@ -64,36 +64,36 @@ log(`测试用扩展副本: ${EXT}`);
 log(`预授权 host: ${hosts.join(", ")}`);
 
 // ---------- 2) 启动真实 Chrome ----------
+// 启动参数与 test-extension-loads.mjs 保持一致（那套在 Windows runner 上实测能起来）
 const baseOpts = {
   executablePath: CHROME,
-  headless: false, // 装扩展需要真实 Chrome
-  timeout: 120000, // Windows runner 上首次启动有时很慢
-  protocolTimeout: 180000, // 实测 runner 上 CDP 握手会慢到超过默认的 30 秒
+  headless: false, // 装扩展必须用有界面的 Chrome
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
     "--disable-features=DisableLoadExtensionCommandLineSwitch",
-    "--no-sandbox", "--no-first-run", "--disable-gpu", "--window-size=1280,900",
+    "--no-sandbox",
+    "--no-first-run",
+    "--disable-gpu",
   ],
 };
-// 与 test-extension-loads.mjs 一样试两种装载机制：老版 Chrome 认命令行开关，
-// 新版才认 CDP 的 enableExtensions；而且 Windows 上偶尔读不到 WS 端点，用 pipe 更稳。
 const attempts = [
-  // Windows runner 上实测：命令行方式经常读不到 WS 端点（超时），pipe 方式才稳，所以 pipe 放第一
-  { label: "enableExtensions + pipe", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true, userDataDir: path.join(os.tmpdir(), "ghreg-profile-1") } },
-  { label: "命令行 --load-extension", opts: { ...baseOpts, userDataDir: path.join(os.tmpdir(), "ghreg-profile-2") } },
+  { label: "命令行 --load-extension", opts: baseOpts },
+  { label: "enableExtensions + pipe（CDP）", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true } },
 ];
 let browser = null;
 for (const a of attempts) {
+  let b = null;
   try {
-    browser = await puppeteer.launch(a.opts);
+    b = await puppeteer.launch(a.opts);
+    browser = b;
     log(`Chrome 已启动（${a.label}）`);
     break;
   } catch (e) {
     log(`启动失败（${a.label}）：${String((e && e.message) || e).slice(0, 120)}`);
+    try { if (b) await b.close(); } catch (e2) {}
   }
 }
-if (!browser) { log("FAIL  Chrome 起不来（两种方式都试过）"); process.exit(1); }
 
 const waitId = async (ms = 25000) => {
   const until = Date.now() + ms;
