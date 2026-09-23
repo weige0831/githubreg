@@ -250,8 +250,16 @@ node test-manager-import.mjs   # 逻辑测试：管理器导入、Clash 换节�
 - `test-manager-import.mjs`：把 `background.js` + `clash.js` 加载进 Node，桩掉 `chrome.*` API 和网络请求，
   跑 140 项断言；为了让"重试等待"不拖时间，测试里把 `setTimeout` 压到 20ms，整套 **约 1 秒**跑完。
 
-**CI**：`.github/workflows/ci.yml` 在每次 push 到 `main` 和 PR 时自动跑这两个测试（Node 20 / 22 两档），
-每次约 15 秒。⚠️ **CI 只做构建与测试这两件事**——这个仓库不做任何与项目无关的自动化
+**CI**：`.github/workflows/ci.yml` 在每次 push 到 `main`、PR，或手动触发（Actions 页面点 Run workflow /
+`gh workflow run ci.yml`）时跑三个任务：
+
+| 任务 | 内容 | 耗时 |
+| --- | --- | --- |
+| 测试（Node 20 / 22） | `test-static.mjs` + `test-manager-import.mjs` 两档 Node 都跑 | 约 15 秒 |
+| 扩展装载测试 | 在真实 Chrome（虚拟显示）里**把扩展装上**，验证能打开面板/弹窗页、四个配置区块都在、无 JS 报错、后台 storage 可用 | 约 30 秒 |
+
+> 扩展装载测试为什么要单独下一个 Chrome 136：新版 Chrome（137+）已禁止用命令行装载未打包扩展
+> （`--load-extension` 被移除），测试里改用仍支持它的 Chrome for Testing 136 跑，装的是**这个仓库的扩展本体**。⚠️ **CI 只做构建与测试这两件事**——这个仓库不做任何与项目无关的自动化
 （GitHub Actions 的用途限制，也是账号与仓库安全的底线）。
 
 ## 文件结构
