@@ -707,7 +707,15 @@ check("清会话接口可用", sess.ok === true, JSON.stringify(sess));
 check("确实调了浏览数据清理（只清 github.com）", calls.includes("browsingData.remove"), calls.join(" → "));
 const src34 = fs.readFileSync("content.js", "utf8");
 check("分流：只有限流页走换节点，其它走清会话", /if \(kind === .限流.\) return handleRateLimit/.test(src34) && /handleBlockedPage\(task, kind\)/.test(src34), "");
-check("清会话只清 cookie + localStorage（不动其它站点）", /origins: \["https:\/\/github\.com"\][\s\S]{0,120}cookies: true, localStorage: true/.test(fs.readFileSync("background.js", "utf8")), "");
+check("清会话清 cookie + localStorage，且连 DataDome 的一起清（换 IP 才有意义）",
+  /origins: \[[\s\S]{0,400}github\.com[\s\S]{0,300}captcha-delivery\.com[\s\S]{0,150}cookies: true, localStorage: true/.test(fs.readFileSync("background.js", "utf8")), "");
+// 用例 34b：GitHub 对可疑 IP 会把 /signup 换成 DataDome 滑块验证页（body 里只有一个跨域 iframe，
+// 文字读不到、也没有任何输入框）—— 按 DOM 结构认出来，才能早点换 IP + 清 cookie
+check("有 DataDome 验证页识别", /function dataDomeBlocked\(\)/.test(src34), "");
+check("按 iframe src/title 认 captcha-delivery/datadome", /captcha-delivery\\\.com\|datadome/i.test(src34) && /script\[src\*="captcha-delivery\.com"\]/.test(src34), "");
+check("只有页面上没表单/按钮时才算验证页（别拦能走的流程）",
+  /return !qs\(EMAIL_SEL\)[\s\S]{0,90}hasSignupButton\(\)/.test(src34), "");
+check("limitKind 会把 DataDome 页判成拦截", /if \(dataDomeBlocked\(\)\) return/.test(src34), "");
 check("重置没有次数上限（一直重试到过去为止）", !/n > 7/.test(src34), "");
 check("token 阶段清会话后换新邮箱重开", /task\.stage === .token.[\s\S]{0,200}new_account/.test(src34), "");
 
