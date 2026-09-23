@@ -1,0 +1,37 @@
+name: CI
+
+# 只做这件事：构建/测试这个仓库的代码。
+# 不跑任何与项目无关的自动化（那是 GitHub Actions 用途限制里的红线，也会连累仓库被处理）。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 测试（Node ${{ matrix.node }}）
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: 版本信息
+        run: node --version
+
+      - name: 静态检查（manifest / 引用完整性 / 不留私人默认值）
+        run: node test-static.mjs
+
+      - name: 逻辑测试（管理器导入、Clash 换节点、停止与重试、限流/拦截分流）
+        run: node test-manager-import.mjs
