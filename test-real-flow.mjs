@@ -9,6 +9,9 @@ import os from "node:os";
 import path from "node:path";
 
 const log = (...a) => console.log(...a);
+// puppeteer 启动失败后清理临时 profile 时可能抛 EBUSY（Windows 上文件还被锁），
+// 那是它自己的清理噪音，不该把测试打崩 —— 否则后面的启动方式根本没机会试。
+process.on("unhandledRejection", (e) => log("（忽略一个未处理的拒绝：" + String(e).slice(0, 90) + "）"));
 if (!process.env.CI && !process.env.RUN_REAL_FLOW) {
   log("SKIP  实际流程测试：本机默认不跑（CI 里会跑；要本机跑就设 RUN_REAL_FLOW=1）");
   process.exit(0);
@@ -75,8 +78,9 @@ const baseOpts = {
 // 与 test-extension-loads.mjs 一样试两种装载机制：老版 Chrome 认命令行开关，
 // 新版才认 CDP 的 enableExtensions；而且 Windows 上偶尔读不到 WS 端点，用 pipe 更稳。
 const attempts = [
-  { label: "命令行 --load-extension", opts: baseOpts },
-  { label: "enableExtensions + pipe", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true } },
+  // Windows runner 上实测：命令行方式经常读不到 WS 端点（超时），pipe 方式才稳，所以 pipe 放第一
+  { label: "enableExtensions + pipe", opts: { ...baseOpts, enableExtensions: [EXT], pipe: true, userDataDir: path.join(os.tmpdir(), "ghreg-profile-1") } },
+  { label: "命令行 --load-extension", opts: { ...baseOpts, userDataDir: path.join(os.tmpdir(), "ghreg-profile-2") } },
 ];
 let browser = null;
 for (const a of attempts) {
