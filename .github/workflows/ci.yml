@@ -46,8 +46,18 @@ jobs:
         with:
           node-version: "20"
 
-      - name: 装 puppeteer-core（用系统自带的 Chrome，不下载浏览器）
+      - name: 装 puppeteer-core（用现成的 Chrome，不下载浏览器）
         run: npm install --no-save --no-package-lock puppeteer-core
+
+      # 新版 Chrome（137+）禁用了 --load-extension，没法再用"命令行装未打包扩展"。
+      # 这里下一个仍支持它的 Chrome for Testing 136 专门跑这个测试。
+      - name: 准备 Chrome 136（支持命令行装载未打包扩展）
+        run: |
+          npx --yes @puppeteer/browsers install chrome@136 --path "$HOME/cft" > /dev/null
+          CHROME=$(find "$HOME/cft" -type f -name chrome | head -1)
+          test -x "$CHROME" || { echo "没找到 Chrome 可执行文件"; exit 1; }
+          echo "CHROME_BIN=$CHROME" >> "$GITHUB_ENV"
+          "$CHROME" --version
 
       - name: 在虚拟显示里装扩展并验证
         run: xvfb-run -a node test-extension-loads.mjs
