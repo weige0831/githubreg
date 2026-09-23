@@ -933,8 +933,12 @@ async function finish(task, { save = true } = {}) {
     await handleBlocked(task, blocked);
     return;
   }
-  // 没有限流提示 = 这次过来了，清掉重试状态（下次再遇到限流会从头开始一轮）
-  if (task.rateLimit || task.resetCount) {
+  // 没有限流提示 = 这次过来了，清掉重试状态（下次再遇到限流会从头开始一轮）。
+  // 只在**真正的流程页**（有表单/验证码框/token 页）才清零：被拦时是从首页重开的，
+  // 首页上本来就没有拦截提示，在那儿清零会把重试计数抹掉 → 每次都被当成"第 1 次"，
+  // 于是既不显示进度、也永远进不了"等一会儿再重开"的节奏，变成一秒一轮猛打 GitHub。
+  const onFlowPage = hasEmail || hasCodeInput || isTokenPage || isVerification;
+  if (onFlowPage && (task.rateLimit || task.resetCount)) {
     delete task.rateLimit;
     task.resetCount = 0;
     await setTask(task);
