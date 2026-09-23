@@ -35,3 +35,19 @@ jobs:
 
       - name: 逻辑测试（管理器导入、Clash 换节点、停止与重试、限流/拦截分流）
         run: node test-manager-import.mjs
+
+  extension-load:
+    name: 扩展装载测试（真实 Chrome）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 装 puppeteer-core（用系统自带的 Chrome，不下载浏览器）
+        run: npm install --no-save --no-package-lock puppeteer-core
+
+      - name: 在虚拟显示里装扩展并验证
+        run: xvfb-run -a node test-extension-loads.mjs
