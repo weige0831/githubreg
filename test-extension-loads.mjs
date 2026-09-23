@@ -85,16 +85,27 @@ try {
     browser.targets().map((t) => `${t.type()}:${t.url().slice(0, 50)}`).join(" | ") || "(无)"
   );
 
+  // 0) 先给扩展一点时间初始化（后台 SW 是懒启动的，可能稍后才出现）
+  for (let i = 0; i < 20; i++) {
+    if (browser.targets().some((t) => t.type() === "service_worker" && t.url().includes(extId))) break;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+
   // 1) 打开扩展自己的页面 = 扩展真的装上了（最可靠的判定）
+  //    刚装好时可能还没就绪（Navigating frame was detached），所以重试几次
+  const panelUrl = `chrome-extension://${extId}/panel.html`;
   const page = await browser.newPage();
   const pageErrors = [];
   page.on("pageerror", (e) => pageErrors.push(String(e && e.message ? e.message : e)));
-  let loaded = true;
-  try {
-    await page.goto(`chrome-extension://${extId}/panel.html`, { waitUntil: "domcontentloaded", timeout: 20000 });
-  } catch (e) {
-    loaded = false;
-    console.log("打开面板页失败：" + String(e.message || e).slice(0, 120));
+  let loaded = false;
+  for (let attempt = 1; attempt <= 5 && !loaded; attempt++) {
+    try {
+      await page.goto(panelUrl, { waitUntil: "domcontentloaded", timeout: 20000 });
+      loaded = true;
+    } catch (e) {
+      console.log(`打开面板页第 ${attempt} 次未成功：${String(e.message || e).slice(0, 90)}`);
+      await new Promise((r) => setTimeout(r, 2000));
+    }
   }
   check("扩展已装载（能打开自己的面板页）", loaded, `id=${extId}`);
 
