@@ -223,6 +223,16 @@ const final = await readState();
 // 它反复报「页面异常 / 上既没有表单也没有按钮」＝ GitHub 没给正常的注册页 ＝ 环境（IP）被拦。
 if (/页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理/.test(final.log)) blocked = true;
 
+// 最后再拍一张，并把面板日志落盘（连同截图一起作为 artifact 传上去）
+await shot("final");
+fs.writeFileSync(path.join(SHOT_DIR, "panel-log.txt"), final.log, "utf8");
+fs.writeFileSync(
+  path.join(SHOT_DIR, "targets.txt"),
+  browser.targets().map((t) => `${t.type()}  ${t.url()}`).join("\n"),
+  "utf8"
+);
+log(`截图与日志已存到 ${SHOT_DIR}`);
+
 log("\n═══════ 面板日志（最后 40 行）═══════");
 log(final.log.split("\n").slice(-40).join("\n"));
 log("═══════ 结束 ═══════");
