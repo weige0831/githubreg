@@ -183,6 +183,10 @@ while (Date.now() < until) {
 }
 
 const final = await readState();
+// 域名侧页面上读不到文字时（GitHub 的挑战页常常是空的），用扩展自己的判定做证据：
+// 它反复报「页面异常 / 上既没有表单也没有按钮」＝ GitHub 没给正常的注册页 ＝ 环境（IP）被拦。
+if (/页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理/.test(final.log)) blocked = true;
+
 log("\n═══════ 面板日志（最后 40 行）═══════");
 log(final.log.split("\n").slice(-40).join("\n"));
 log("═══════ 结束 ═══════");
