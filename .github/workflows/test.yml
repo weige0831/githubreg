@@ -126,5 +126,15 @@ jobs:
           MANAGER_BASE_URL: ${{ secrets.MANAGER_BASE_URL }}
           MANAGER_PASSWORD: ${{ secrets.MANAGER_PASSWORD }}
           MANAGER_API_KEY: ${{ secrets.MANAGER_API_KEY }}
-          REAL_FLOW_MINUTES: "15"
+          REAL_FLOW_MINUTES: ${{ inputs.real_flow_minutes || '15' }}
         run: node test-real-flow.mjs
+
+      # 出问题时（IP 被 GitHub 拦）要看现场：GitHub 那边到底是什么页面、扩展当时怎么判断的
+      - name: 上传截图与面板日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-flow-artifacts
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
