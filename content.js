@@ -26,11 +26,28 @@ const RATE_LIMIT_RE =
 const BOT_CHALLENGE_RE =
   /访问暂时受限|暂时受限|我不是机器人|verify you are human|are you a robot|temporarily restricted|unusual (activity|traffic)/i;
 
+// GitHub 对"可疑 IP"会把 /signup 整页换成 DataDome 的滑块验证（页面上写着 Verification Required /
+// Slide right to secure your access）。那页的 body 里只有一个跨域 iframe（文字读不到、也没有任何
+// 输入框和按钮），所以只能按 DOM 结构认它。认出它是为了**早点换 IP + 清 cookie**，不是去解验证码。
+function dataDomeBlocked() {
+  let has = false;
+  for (const f of document.querySelectorAll("iframe")) {
+    const s = `${f.getAttribute("src") || ""} ${f.getAttribute("title") || ""}`;
+    if (/captcha-delivery\.com|datadome/i.test(s)) { has = true; break; }
+  }
+  if (!has) has = !!document.querySelector('script[src*="captcha-delivery.com"]');
+  if (!has) return false;
+  // 只有当页面上根本没有可填的东西时才算"这页就是验证页本身"——
+  // 万一以后验证码是嵌在正常注册表单里的，别把能走的流程也拦住。
+  return !qs(EMAIL_SEL) && !qs(PW_SEL) && !qs(CODE_INPUT_SEL) && !hasSignupButton();
+}
+
 // 返回命中的类型（""=没命中），顺手把两类拦截合并成一个入口
 function limitKind() {
   const body = document.body ? document.body.innerText : "";
   if (BOT_CHALLENGE_RE.test(body)) return "人机验证拦截";
   if (RATE_LIMIT_RE.test(body)) return "限流";
+  if (dataDomeBlocked()) return "人机验证（DataDome 滑块）";
   return "";
 }
 
