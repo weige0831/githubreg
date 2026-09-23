@@ -210,6 +210,12 @@ while (Date.now() < until) {
       }
     } catch (e) {}
   }
+  // 抓现场：20 秒时拍一张（看 /signup 到底长什么样），
+  // 之后每次判定"被拦 / 卡住"再拍，每张至少间隔 60 秒，最多 10 张。
+  const looksBlocked = blocked || /页面异常（没有可操作元素）|上既没有表单也没有按钮|当成被拦截处理/.test(st.log || "");
+  if (looksBlocked) blocked = true;
+  if (shots === 0 && Date.now() - t0 > 20000) { lastShotAt = Date.now(); await shot("early"); }
+  else if (looksBlocked && Date.now() - lastShotAt > 60000 && shots < 10) { lastShotAt = Date.now(); await shot("blocked"); }
 }
 
 const final = await readState();
