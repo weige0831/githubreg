@@ -68,6 +68,7 @@ const baseOpts = {
   executablePath: CHROME,
   headless: false, // 装扩展需要真实 Chrome
   timeout: 120000, // Windows runner 上首次启动有时很慢
+  protocolTimeout: 180000, // 实测 runner 上 CDP 握手会慢到超过默认的 30 秒
   args: [
     `--disable-extensions-except=${EXT}`,
     `--load-extension=${EXT}`,
