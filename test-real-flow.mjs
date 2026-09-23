@@ -61,7 +61,12 @@ const manifestPath = path.join(EXT, "manifest.json");
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const hosts = [];
 for (const u of [MAIL_API_URL, MANAGER_BASE_URL]) {
-  try { hosts.push(new URL(u).origin + "/*"); } catch (e) {}
+  try {
+    const p = new URL(u);
+    // 匹配模式里**不能带端口**（Chrome 的匹配模式忽略端口，带上就是无效模式 →
+    // 装扩展时那条权限直接被丢掉，后台 fetch 就会被拦，日志里表现为"未授权：点保存并允许"）
+    hosts.push(`${p.protocol}//${p.hostname}/*`);
+  } catch (e) {}
 }
 manifest.host_permissions = [...new Set([...(manifest.host_permissions || []), ...hosts])];
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
