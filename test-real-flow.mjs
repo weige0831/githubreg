@@ -125,13 +125,38 @@ log("已写入配置，点「开始注册」...");
 await panel.click("#startBtn");
 
 // ---------- 4) 边等边看：账户出现了吗 / 卡在什么页面 ----------
-const readState = () =>
-  panel.evaluate(async () => {
-    const { accounts = [], task = null } = await chrome.storage.local.get(["accounts", "task"]);
-    const { task: sTask = null } = await chrome.storage.session.get("task");
-    const el = document.getElementById("log");
-    return { accounts, task, sessionTask: sTask, log: el ? el.innerText : "" };
-  });
+// 注意：点开始注册后扩展会"清理环境"（关掉多余标签页），刚才那个面板页会被关掉，
+// 所以状态从**后台 service worker** 读（不依赖标签页），日志用一个新开的面板页收。
+const swTarget = () => browser.targets().find((t) => t.type() === "service_worker" && t.url().includes(extId));
+const readState = async () => {
+  const t = swTarget();
+  const w = t ? await t.worker().catch(() => null) : null;
+  if (!w) return { accounts: [], sessionTask: null, log: await getLog() };
+  const st = await w
+    .evaluate(async () => {
+      const { accounts = [] } = await chrome.storage.local.get("accounts");
+      const { task = null } = await chrome.storage.session.get("task");
+      return { accounts, sessionTask: task };
+    })
+    .catch(() => ({ accounts: [], sessionTask: null }));
+  return { ...st, log: await getLog() };
+};
+
+let logPage = null;
+async function getLog() {
+  try {
+    if (!logPage || logPage.isClosed()) {
+      logPage = await browser.newPage();
+      await logPage.goto(`chrome-extension://${extId}/panel.html`, { waitUntil: "domcontentloaded", timeout: 20000 });
+    }
+    return await logPage.evaluate(() => {
+      const el = document.getElementById("log");
+      return el ? el.innerText : "";
+    });
+  } catch (e) {
+    return "";
+  }
+}
 
 const BOT_RE = /访问暂时受限|我不是机器人|verify you are human|temporarily restricted|too many (requests|attempts)|rate limit|whoa there|请求过多|操作过于频繁/i;
 let done = null;
