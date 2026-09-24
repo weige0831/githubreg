@@ -310,7 +310,10 @@ extension/
 ├── clash.js                 # Clash 换节点：限流/节点太慢时自动切换 + 拉黑
 ├── push-to-github.mjs       # 推送脚本：把工作区同步到 GitHub（无需本机 git）
 ├── test-static.mjs          # 静态检查（结构/引用/不留私人默认值）
-├── .github/workflows/ci.yml # CI：push 时自动跑两个测试
+├── test-integration.mjs     # 连通性测试：真连邮局 + 管理器（只读，不上传）
+├── test-extension-loads.mjs # 真实 Chrome 里装载扩展并验证后台/面板/弹窗
+├── test-real-flow.mjs       # 真实流程测试：完整跑一遍注册（手动触发，会截图留证）
+├── .github/workflows/test.yml # CI：push 时跑前三个测试，真实流程手动触发
 ├── .gitignore
 └── icons/           # 扩展图标
 ```
