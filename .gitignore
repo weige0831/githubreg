@@ -9,6 +9,9 @@ github-token.txt
 tmp/
 node_modules/
 
+# 测试跑出来的现场（截图 / 页面 HTML / 面板日志 —— 日志里可能带凭据），只上传到 Actions artifacts
+artifacts/
+
 # 编辑器
 .vscode/
 .idea/
