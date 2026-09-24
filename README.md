@@ -242,13 +242,13 @@ mklink /J "%USERPROFILE%\Downloads\githubreg-backup" "%LOCALAPPDATA%\githubreg-b
 
 ```bash
 node test-static.mjs           # 静态检查：manifest、引用完整性、弹窗/面板一致性、不留私人默认值
-node test-manager-import.mjs   # 逻辑测试：管理器导入、Clash 换节点、停止/重试、限流与拦截分流（140 项断言）
+node test-manager-import.mjs   # 逻辑测试：管理器导入、Clash 换节点、停止/重试、限流与拦截分流（147 项断言）
 ```
 
 - `test-static.mjs`：查结构——manifest 是否 MV3、引用的文件是否都在、`gam-ui.js` 用到的 id 在弹窗和面板里是否一致、
   **代码里有没有把私人服务地址/密码写成默认值**、推送脚本的私人信息闸门和 `.gitignore` 是否还在。
 - `test-manager-import.mjs`：把 `background.js` + `clash.js` 加载进 Node，桩掉 `chrome.*` API 和网络请求，
-  跑 140 项断言；为了让"重试等待"不拖时间，测试里把 `setTimeout` 压到 20ms，整套 **约 1 秒**跑完。
+  跑 147 项断言；为了让"重试等待"不拖时间，测试里把 `setTimeout` 压到 20ms，整套 **约 1 秒**跑完。
 
 **CI**：`.github/workflows/test.yml`（**Windows runner**）在每次 push 到 `main`、PR，或手动触发时跑：
 
