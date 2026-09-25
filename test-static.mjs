@@ -64,10 +64,16 @@ if (mailDefault) {
   check("邮局地址默认留空", apiUrl === "", `apiUrl="${apiUrl}"`);
 }
 
-// ---------- 5) 推送脚本的私人信息闸门还在 ----------
-const push = fs.readFileSync("push-to-github.mjs", "utf8");
-check("推送脚本有私人信息闸门", /scanPrivateInfo/.test(push) && /private-patterns\.json/.test(push), "");
-check("推送脚本会跳过 .zcode/", /\.zcode/.test(push), "");
+// ---------- 5) 推送脚本的私人信息闸门还在（脚本只在本机存在，不进公开仓库）----------
+let push = "";
+try { push = fs.readFileSync("push-to-github.mjs", "utf8"); } catch (e) {}
+if (push) {
+  check("推送脚本有私人信息闸门", /scanPrivateInfo/.test(push) && /private-patterns\.json/.test(push), "");
+  check("推送脚本会跳过 .zcode/", /\.zcode/.test(push), "");
+  check("推送脚本不会把自己推上去", /SKIP_FILES/.test(push) && /push-to-github\.mjs/.test(push), "");
+} else {
+  console.log("SKIP  推送脚本只在本机（公开仓库里没有它），跳过它的闸门检查");
+}
 
 // ---------- 6) 不许把本地配置/密钥提交进来 ----------
 const gitignore = fs.readFileSync(".gitignore", "utf8");
