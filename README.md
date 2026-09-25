@@ -169,11 +169,16 @@
 
 > 导入时会把 GitHub 密码和临时邮箱一起作为 `password` / `recovery_email` 提交（管理器会加密存储）。
 
-## 代码仓库与自动推送
+## 代码仓库与推送
 
-代码公开在 <https://github.com/weige0831/githubreg>，改动会自动推上去。
+代码公开在 <https://github.com/weige0831/githubreg>。
 
-**推送方式**：`node push-to-github.mjs`
+推送脚本（`push-to-github.mjs`）是**本机工具，不在仓库里** —— 它带着本机目录结构、也负责把工作区同步上去，
+所以脚本里把自己排除了（`SKIP_FILES`）。要推送时在本机执行：
+
+```bash
+node push-to-github.mjs
+```
 
 - 优先用本机 git（工作区是 git 仓库时）：`git add -A` → `git commit` → `git push origin HEAD:main`；
   没有 git 的机器会退回 GitHub API（用 blob sha 比对本地与远端，只上传变化的文件，删除同步，
