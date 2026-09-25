@@ -109,7 +109,7 @@ function walk(dir, out = []) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (!SKIP_DIRS.has(entry.name)) walk(full, out);
-    } else if (entry.isFile() && !SKIP_FILE_RE.test(entry.name)) {
+    } else if (entry.isFile() && !SKIP_FILE_RE.test(entry.name) && !SKIP_FILES.has(entry.name)) {
       out.push(full);
     }
   }
