@@ -71,7 +71,9 @@ for (const u of [MAIL_API_URL, MANAGER_BASE_URL]) {
 manifest.host_permissions = [...new Set([...(manifest.host_permissions || []), ...hosts])];
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
 log(`测试用扩展副本: ${EXT}`);
-log(`预授权 host: ${hosts.join(", ")}`);
+// 别把地址打出来：日志是公开的，而这些 host 是从 Secrets **派生**出来的字符串，
+// GitHub 只会脱敏完整的密钥值，派生出来的（去掉端口/路径）不会被脱敏。
+log(`预授权 host: 已写入 ${hosts.length} 条（地址不打印）`);
 
 // ---------- 2) 启动真实 Chrome ----------
 // 启动：与 test-extension-loads.mjs 同样的参数，但超时给足（并行 job 抢资源时 30 秒不够），
