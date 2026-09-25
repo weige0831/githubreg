@@ -28,6 +28,9 @@ const ROOT = path.dirname(fileURLToPath(import.meta.url));
 // 不推送的内容：本地配置与密钥、依赖、临时文件
 const SKIP_DIRS = new Set([".git", ".zcode", "node_modules", ".vscode"]);
 const SKIP_FILE_RE = /^\.tmp-/;
+// 这个推送脚本本身是**本机工具**，不属于扩展、也不该出现在公开仓库里：
+// 它带着本机的目录结构，而且它是"把工作区同步上去"的 —— 不排除自己就会每次又传回去。
+const SKIP_FILES = new Set(["push-to-github.mjs"]);
 
 const LOCK_FILE = path.join(os.tmpdir(), "githubreg-push.lock");
 const PATTERN_FILE = path.join(ROOT, ".zcode", "private-patterns.json");
