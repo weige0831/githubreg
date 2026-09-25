@@ -15,3 +15,6 @@ artifacts/
 # 编辑器
 .vscode/
 .idea/
+
+# 本机工具脚本（带本机目录结构，不进公开仓库）
+push-to-github.mjs
