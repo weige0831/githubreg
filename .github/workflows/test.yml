@@ -135,7 +135,9 @@ jobs:
           REAL_FLOW_MINUTES: ${{ inputs.real_flow_minutes || '15' }}
         run: node test-real-flow.mjs
 
-      # 出问题时（IP 被 GitHub 拦）要看现场：GitHub 那边到底是什么页面、扩展当时怎么判断的
+      # 出问题时（IP 被 GitHub 拦）要看现场：GitHub 那边到底是什么页面、扩展当时怎么判断的。
+      # 注意：公开仓库的 artifact 谁都能下载，截图里能看到邮局域名等信息 —— 所以只留 1 天，
+      # 排查完就自动消失；期间不要往仓库里塞带真实服务信息的截图。
       - name: 上传截图与面板日志
         if: always()
         uses: actions/upload-artifact@v4
@@ -143,4 +145,4 @@ jobs:
           name: real-flow-artifacts
           path: artifacts/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 1
