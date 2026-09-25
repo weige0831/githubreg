@@ -173,12 +173,16 @@
 
 代码公开在 <https://github.com/weige0831/githubreg>。
 
-推送脚本（`push-to-github.mjs`）是**本机工具，不在仓库里** —— 它带着本机目录结构、也负责把工作区同步上去，
-所以脚本里把自己排除了（`SKIP_FILES`）。要推送时在本机执行：
+推送脚本（`push-to-github.mjs`）是**本机工具，不在仓库里**（`.gitignore` 里也排除了它）：它带着本机目录结构，
+而且是"把工作区同步上去"的，所以脚本里把自己排除了（`SKIP_FILES`）。要推送时在本机执行：
 
 ```bash
-node push-to-github.mjs
+node push-to-github.mjs --push
 ```
+
+> **自动推送已关闭**：存在 `.zcode/autopush-off` 时，不带 `--push` 的调用（编辑器钩子就是这种）
+> 会直接跳过 —— 改文件不再自动往 GitHub 推。要恢复自动推送就删掉那个文件，
+> 并把 `.zcode/config.json` 的 hooks 恢复（备份 `.zcode/config.json.auto-push.bak`）。
 
 - 优先用本机 git（工作区是 git 仓库时）：`git add -A` → `git commit` → `git push origin HEAD:main`；
   没有 git 的机器会退回 GitHub API（用 blob sha 比对本地与远端，只上传变化的文件，删除同步，
@@ -199,7 +203,7 @@ node push-to-github.mjs
 
 - 推送前会扫一遍工作区，命中 `.zcode/private-patterns.json` 里任何一条关键字就**拒绝推送**并列出命中位置；
   该文件只在本机（`.zcode/` 不推送），自己新增私人服务时把地址/域名/密码关键字加进去即可。
-- 确认要推：`PUSH_ALLOW_SECRETS=1 node push-to-github.mjs`。
+- 确认要推：`PUSH_ALLOW_SECRETS=1 node push-to-github.mjs --push`。
 - 代码里本身也不带任何私人服务默认值：管理器地址、管理密码、邮局地址、邮箱域名全部在扩展面板里填，
   存在浏览器本地存储（`chrome.storage.local`），不落在源码里。
 
