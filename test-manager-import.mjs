@@ -451,7 +451,8 @@ check("清理发生在开新标签页之前",
   calls.join(" → "));
 check("清理时关掉了多余标签页", calls.includes("tabs.remove"), calls.join(" → "));
 check("开跑前不额外做一次无用的跳转", navUrls.length === 0, "nav=" + JSON.stringify(navUrls) + " | " + calls.join(" → "));
-check("超大数量会被夹到上限（防手滑）", (await send({ type: "start", count: 999999 })).count === 999, "");
+check("大数量不再被 999 卡住（2000 就是 2000）", (await send({ type: "start", count: 2000 })).count === 2000, "");
+check("天文数字仍会被夹到合理上限（防手滑）", (await send({ type: "start", count: 99999999 })).count === MAX_BATCH, String(MAX_BATCH));
 
 // 用例 14：关掉「本地也存一份」→ 进了管理器的号不再留本地副本
 const importedBefore = (await send({ type: "gam_get_status" })).status.imported;
@@ -967,6 +968,16 @@ check("收信轮询单次请求有超时（8 秒）", /emails`\, \{\}, 8000\)/.t
 check("邮局建邮箱走超时路径", /function fetchWithPermitHint\(url, options, what = "", timeoutMs = \d+\)/.test(bg50), "");
 check("超时当场就换节点（不等满 3 次）", /\(e && e\.timedOut\) \|\| fails % 3 === 0/.test(bg50), "");
 check("开新号期间看门狗不抢着开标签页", /busyStarting = true/.test(bg50) && /if \(busyStarting\) return/.test(bg50), "");
+// 用例 51：当前账户凭据要跟着换号刷新（不能永远显示第一个号）
+const panelJs = fs.readFileSync("panel.js", "utf8");
+const popupJs = fs.readFileSync("popup.js", "utf8");
+for (const [name, src] of [["面板", panelJs], ["弹窗", popupJs]]) {
+  check(`${name}：凭据卡片订阅了 task 变化`, /chrome\.storage\.session\.onChanged\.addListener/.test(src) && /changes\.task\) refreshCurrentAccount/.test(src), "");
+  check(`${name}：打开时就渲染当前账户`, /refreshCurrentAccount\(\);/.test(src), "");
+  check(`${name}：不再用开始响应里的第一个号写死`, !/\$\{resp\.username\}/.test(src), "");
+  check(`${name}：输入上限已放开`, !/Math\.min\(999,/.test(src), "");
+}
+check("后台上限已放开（MAX_BATCH 不再是 999）", MAX_BATCH > 999, String(MAX_BATCH));
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 

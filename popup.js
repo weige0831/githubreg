@@ -7,6 +7,33 @@ const exportBtn = $("#exportBtn");
 const manageBtn = $("#manageBtn");
 const countInput = $("#countInput");
 const infoBox = $("#info");
+
+// 当前账户凭据：**每换一个号都会变**。
+// 原来是在点「开始注册」时用那次响应渲染一次，所以永远显示第一个号；
+// 现在改成订阅 task 的变化，换号、打开面板时都会刷新。
+async function refreshCurrentAccount() {
+  let task = null;
+  try {
+    ({ task } = await chrome.storage.session.get("task"));
+  } catch (e) {}
+  if (!task || !task.email) {
+    infoBox.classList.add("hidden");
+    return;
+  }
+  infoBox.classList.remove("hidden");
+  infoBox.innerHTML = `
+      <div>📧 邮箱：<b>${task.email}</b></div>
+      <div>👤 用户名：<b>${task.username || ""}</b></div>
+      <div>🔑 密码：<b>${task.password || ""}</b></div>
+    `;
+}
+try {
+  chrome.storage.session.onChanged.addListener((changes) => {
+    if (changes.task) refreshCurrentAccount();
+  });
+} catch (e) {}
+refreshCurrentAccount();
+
 const countEl = $("#count");
 const queueEl = $("#queueStatus");
 
@@ -57,16 +84,11 @@ stopBtn.addEventListener("click", async () => {
 
 startBtn.addEventListener("click", async () => {
   startBtn.disabled = true;
-  const count = Math.max(1, Math.min(999, parseInt(countInput.value, 10) || 1));
+  const count = Math.max(1, Math.min(100000, parseInt(countInput.value, 10) || 1));
   appendLog(`开始注册（连续 ${count} 个）...`);
   const resp = await chrome.runtime.sendMessage({ type: "start", count });
   if (resp && resp.ok) {
-    infoBox.classList.remove("hidden");
-    infoBox.innerHTML = `
-      <div>📧 邮箱：<b>${resp.email}</b></div>
-      <div>👤 用户名：<b>${resp.username}</b></div>
-      <div>🔑 密码：<b>${resp.password}</b></div>
-    `;
+    refreshCurrentAccount(); // 当前账户凭据（会跟着换号自动刷新）
     appendLog("已打开 GitHub 页面，开始自动注册");
     // 打开常驻侧边栏面板，注册过程可一直查看
     if (resp.tabId) {

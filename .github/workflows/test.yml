@@ -16,7 +16,7 @@ on:
     inputs:
       # 只有无害的测试参数能从这里传；地址/密码一律走 Secrets
       batch_count:
-        description: "连续注册数量（测试用：验证队列初始化与上限夹取，1~999）"
+        description: "连续注册数量（测试用：验证队列初始化与上限夹取，1~100000）"
         required: false
         default: "20"
       manager_group_size:
