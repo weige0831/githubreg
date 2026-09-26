@@ -32,6 +32,8 @@ const startupListeners = []; // onStartup / onInstalled 注册的自检函数
 const logs = [];
 const calls = []; // 记录 chrome API 调用顺序，用来验证「先清理环境，再开新标签页」
 const navUrls = []; // 记录 tabs.update 导航到的地址
+const tabsDead = new Set(); // 被标记为「已被关掉」的 tabId（默认没有，见 tabs.get/update 的桩）
+let lastTabCreate = null; // 最近一次 tabs.create 传的参数（用来验证 autoDiscardable）
 const area = (name) => ({
   get: async (k) => {
     const o = store[name];
@@ -66,10 +68,22 @@ globalThis.chrome = {
     request: async () => api.permitted,
   },
   tabs: {
-    create: async () => { calls.push("tabs.create"); return { id: 1 }; },
+    // liveTabs：哪些 tabId 还算"存在"。不在里面的 id，tabs.get 会像真实 Chrome 那样抛
+    // "No tab with id: xxx" —— 用来复现「标签页被关掉后换节点重开失败」那个 bug。
+    create: async (props) => { calls.push("tabs.create"); lastTabCreate = props || {}; return { id: 1 }; },
+    get: async (id) => {
+      calls.push("tabs.get");
+      if (tabsDead.has(id)) throw new Error("No tab with id: " + id + ".");
+      return { id };
+    },
     remove: async () => { calls.push("tabs.remove"); },
     query: async () => { calls.push("tabs.query"); return [{ id: 10 }, { id: 11 }]; },
-    update: async (id, props) => { calls.push("tabs.update"); navUrls.push((props && props.url) || ""); },
+    update: async (id, props) => {
+      calls.push("tabs.update");
+      if (tabsDead.has(id)) throw new Error("No tab with id: " + id + ".");
+      navUrls.push((props && props.url) || "");
+      if (props && props.autoDiscardable === false) calls.push("tabs.autoDiscardable=false");
+    },
     reload: async () => { calls.push("tabs.reload"); },
   },
   browsingData: { remove: async () => { calls.push("browsingData.remove"); } },
@@ -690,7 +704,7 @@ check("收验证码的 90 秒轮询在 keepAlive 里",
 check("等验证码框的 5 分钟等待在 keepAlive 里",
   /keepAlive\(async \(\) => \{[\s\S]{0,400}?waitFor\(CODE_INPUT_SEL/.test(contentSrc), "");
 check("keepAlive 心跳间隔 15 秒（小于 60 秒阈值）",
-  /__ghLastLogAt = Date\.now\(\)[\s\S]{0,40}?15000/.test(contentSrc), "");
+  /__ghLastLogAt = Date\.now\(\)[\s\S]{0,400}?15000/.test(contentSrc), "");
 check("看门狗首轮阈值 5 分钟、循环内 1 分钟",
   /task\.rateLimit \? 60000 : 5 \* 60 \* 1000/.test(contentSrc), "");
 
@@ -823,6 +837,53 @@ if (oneGroup43) {
   check(`每组 ${GROUP_SIZE} 个：新组的第一条备注是 ${oneGroup43}-0`,
     byGroup43[oneGroup43][0] === `${oneGroup43}-0`, byGroup43[oneGroup43][0]);
 }
+
+// 用例 44：标签页被关掉后，换节点重开要能自己把页面重新开出来
+// （本地实测 bug：tabs.update 抛 "No tab with id: xxx" → 流程就停在那儿不动了）
+calls.length = 0; navUrls.length = 0;
+await send({ type: "set_task", task: { stage: "fill", email: "a@example.com", tabId: 999 } }); // 999 标记为已被关掉
+tabsDead.add(999);
+const re1 = await reloadTaskTab("测试：标签页没了");
+check("标签页不在时不再报 'No tab with id' 失败", re1 === true, String(re1));
+check("标签页不在时重新开了一个", calls.includes("tabs.create"), calls.join(" → "));
+check("重开后把 task 指到新标签页", (await send({ type: "get_task" })).task.tabId === 1, JSON.stringify((await send({ type: "get_task" })).task));
+check("新标签页也禁止被浏览器回收", lastTabCreate && lastTabCreate.autoDiscardable === false, JSON.stringify(lastTabCreate));
+
+calls.length = 0; navUrls.length = 0;
+await send({ type: "set_task", task: { stage: "fill", email: "a@example.com", tabId: 10 } }); // 10 是活的（没被标记）
+const re2 = await reloadTaskTab("测试：标签页还在");
+check("标签页还在时只导航、不新开", re2 === true && navUrls.includes("https://github.com/signup") && !calls.includes("tabs.create"), calls.join(" → "));
+
+calls.length = 0; navUrls.length = 0;
+await send({ type: "set_task", task: { stage: "token", email: "a@example.com", tabId: 10 } });
+await reloadTaskTab("测试：token 阶段回首页");
+check("token 阶段回首页（不是注册页）", navUrls.includes("https://github.com/"), navUrls.join(","));
+
+// 用例 45：后台看门狗（关掉远程桌面后页面被系统冻结时，靠它把页面重新拉起来）
+calls.length = 0; navUrls.length = 0;
+await send({ type: "set_task", task: { stage: "fill", email: "a@example.com", tabId: 10 } });
+store.session.queue = { total: 3, left: 2 };
+store.session.lastPageBeat = Date.now() - 5 * 60 * 1000; // 5 分钟没动静 = 冻住了
+const wd1 = await onWatchdogTick();
+check("页面冻住超过 3 分钟 → 看门狗重开页面", wd1.action.includes("重开页面") && navUrls.length > 0, JSON.stringify(wd1) + " / " + navUrls.join(","));
+check("看门狗重开后重置了心跳（不连环重开）", Date.now() - store.session.lastPageBeat < 5000, String(store.session.lastPageBeat));
+
+calls.length = 0; navUrls.length = 0;
+store.session.lastPageBeat = Date.now() - 10 * 1000; // 10 秒前刚有动静
+const wd2 = await onWatchdogTick();
+check("页面有动静时看门狗不动手", navUrls.length === 0 && wd2.action === "页面有动静", JSON.stringify(wd2));
+
+calls.length = 0;
+store.session.queue = null;
+store.session.lastPageBeat = Date.now() - 30 * 60 * 1000;
+const wd3 = await onWatchdogTick();
+check("没有批量在跑时看门狗不动手", navUrls.length === 0 && wd3.action === "无批量在跑", JSON.stringify(wd3));
+
+// 用例 46（静态不变量）：页面心跳要报给后台，否则看门狗把正常等待当成冻结
+const content46 = fs.readFileSync("content.js", "utf8");
+check("页面 keepAlive 会报心跳给后台", /page_beat/.test(content46) && /__ghLastLogAt = Date\.now\(\)[\s\S]{0,300}page_beat/.test(content46), "");
+check("后台收到日志就记一次心跳", /content_log[\s\S]{0,200}markPageBeat/.test(fs.readFileSync("background.js", "utf8")), "");
+check("看门狗阈值是 3 分钟", /PAGE_IDLE_LIMIT_MS = 3 \* 60 \* 1000/.test(fs.readFileSync("background.js", "utf8")), "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);

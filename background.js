@@ -280,6 +280,54 @@ async function setQueue(q) {
   await chrome.storage.session.set({ queue: q });
 }
 
+// ===== 页面心跳 + 看门狗 =====
+// 为什么需要它：在 Windows 上关掉远程桌面（RDP）后，Chrome 会把窗口判定成"被遮挡/不可见"，
+// 于是把页面里的定时器节流甚至冻结（界面被断开时尤其明显），表现就是"我一关远程桌面它就卡住不动了"。
+// 页面自己的看门狗（content.js 里的 watchStuck）也活在被冻结的定时器上，一样不动；
+// 而后台的 chrome.alarms **不受这个影响**，所以在后台盯心跳，超时就重开页面。
+const WATCHDOG_ALARM = "ghreg-page-watchdog";
+const PAGE_IDLE_LIMIT_MS = 3 * 60 * 1000; // 页面 3 分钟一点动静都没有 = 冻住了
+
+async function markPageBeat() {
+  try {
+    await chrome.storage.session.set({ lastPageBeat: Date.now() });
+  } catch (e) {}
+}
+
+function startWatchdogAlarm() {
+  try {
+    chrome.alarms.create(WATCHDOG_ALARM, { periodInMinutes: 1 });
+  } catch (e) {}
+}
+
+function stopWatchdogAlarm() {
+  try {
+    chrome.alarms.clear(WATCHDOG_ALARM);
+  } catch (e) {}
+}
+
+async function onWatchdogTick() {
+  const queue = await getQueue();
+  if (!queue) {
+    stopWatchdogAlarm(); // 没有批量在跑就不用管了
+    return { ok: true, action: "无批量在跑" };
+  }
+  const { lastPageBeat = 0 } = await chrome.storage.session.get("lastPageBeat");
+  if (!lastPageBeat) return { ok: true, action: "还没有心跳" };
+  const idle = Date.now() - lastPageBeat;
+  if (idle < PAGE_IDLE_LIMIT_MS) return { ok: true, action: "页面有动静", idleMs: idle };
+  const mins = Math.round(idle / 60000);
+  notify(`⏱️ 页面已经 ${mins} 分钟没有任何动静（多半是被系统/浏览器冻结了）：重新打开页面接着跑`);
+  await markPageBeat(); // 先记一次心跳，免得看门狗连环重开
+  await reloadTaskTab("看门狗：页面长时间没反应");
+  return { ok: true, action: `重开页面（静默 ${mins} 分钟）`, idleMs: idle };
+}
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name !== WATCHDOG_ALARM) return;
+  await onWatchdogTick();
+});
+
 // 开一个注册流程（新邮箱 + 新账户 + 打开首页）
 // extra 会并进新任务里（比如换邮箱重试要带着 recoverAttempts，否则重试次数会被清零）
 async function startOne(extra = {}) {
@@ -293,10 +341,13 @@ async function startOne(extra = {}) {
   const { email, token } = await createTempEmail();
   const password = randPassword();
   const username = randUsername();
-  const tab = await chrome.tabs.create({ url: HOME_URL, active: true });
+  // autoDiscardable: false —— 别让浏览器把任务标签页当"不活跃标签"回收掉（那会让页面脚本整个消失，
+  // 表现就是"卡住不动了"，而且后台再也不知道该重开哪个页面）
+  const tab = await chrome.tabs.create({ url: HOME_URL, active: true, autoDiscardable: false });
   await chrome.storage.session.set({
     task: { stage: "start", email, password, username, token, tabId: tab.id, ...extra },
   });
+  await markPageBeat(); // 新页面刚开，心跳重置
   notify(`📧 临时邮箱: ${email}`);
   // 尽量自动呼出常驻侧边栏面板（不 await，避免拖慢批量衔接）
   openPanel(tab.id).catch(() => {});
@@ -430,6 +481,7 @@ async function onRegistrationDone(account, { save = true } = {}) {
     notify(`🎉 批量注册完成：共 ${queue.total} 个`);
     await setQueue(null);
     stopClashAlarm();
+    stopWatchdogAlarm();
     playSuccess();
   }
 }
@@ -799,8 +851,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // 开跑前先清一遍环境：上一批（或上次浏览）留下的 GitHub 登录态会让第一个号卡在首页
           notify("🧹 先清理环境：清除 GitHub 登录态 + 关掉多余标签页...");
           await cleanupBeforeNext({ openGithub: false });
+          await clashHealthCheck("开跑之前");
           await clashHealthCheck("开跑之前"); // 节点不行就先换掉再开始
           startClashAlarm(); // 批量期间每分钟检查一次节点速度
+          startWatchdogAlarm(); // 批量期间每分钟看一眼页面冻没冻住
           await sleep(1000);
           const info = await startOneWithRetry();
           notify(count > 1 ? `开始批量注册：共 ${count} 个` : "开始注册");
@@ -842,7 +896,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       case "content_log": {
         // content 脚本日志：只由后台转发为 log，面板只显示这一份
+        await markPageBeat(); // 页面在说话 = 它还活着（看门狗靠这个判断冻没冻住）
         notify(msg.text);
+        sendResponse({ ok: true });
+        break;
+      }
+      case "page_beat": {
+        // 页面的定时器心跳（content.js 里的 keepAlive 每 15 秒报一次，不产生日志）
+        await markPageBeat();
         sendResponse({ ok: true });
         break;
       }
@@ -868,6 +929,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const { task } = await chrome.storage.session.get("task");
           if (task) await chrome.storage.session.set({ task: { ...task, stopped: true } });
           stopClashAlarm();
+          stopWatchdogAlarm();
           notify("⏹ 已停止：不再开新号、自动重试也停下（点「开始注册」可重新开始）");
           sendResponse({ ok: true });
         } catch (e) {

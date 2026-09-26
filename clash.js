@@ -233,16 +233,27 @@ async function clashHealthCheck(trigger = "定时检查") {
 // 「确认重新提交表单」对话框，把自动化卡住等人点（实测踩到过）。
 // 改成导航到一个干净的 GET 地址，页面脚本会按 stage 自己接着往下走。
 async function reloadTaskTab(reason) {
+  const { task } = await chrome.storage.session.get("task");
+  if (!task) {
+    notify("没有找到当前任务，没重新打开");
+    return false;
+  }
+  // token 阶段回首页即可（首页会自己跳 token 创建页）；其它阶段回注册页重填
+  const url = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
   try {
-    const { task } = await chrome.storage.session.get("task");
-    if (!task || !task.tabId) {
-      notify("没有找到当前任务的标签页，没重新打开");
-      return false;
+    // 标签页可能已经不在了（被用户关掉、被浏览器回收、整个窗口被关）。
+    // 这时 chrome.tabs.update 会抛 "No tab with id: xxx"，流程就停在那儿不动了 ——
+    // 所以先看它在不在，不在就重新开一个，并把 task 指向新标签页（页面脚本会按 stage 接着跑）。
+    const alive = task.tabId ? await chrome.tabs.get(task.tabId).catch(() => null) : null;
+    if (alive) {
+      await chrome.tabs.update(task.tabId, { url });
+      notify(`🔄 已重新打开 ${url}（${reason}）`);
+      return true;
     }
-    // token 阶段回首页即可（首页会自己跳 token 创建页）；其它阶段回注册页重填
-    const url = task.stage === "token" ? "https://github.com/" : "https://github.com/signup";
-    await chrome.tabs.update(task.tabId, { url });
-    notify(`🔄 已重新打开 ${url}（${reason}）`);
+    const t = await chrome.tabs.create({ url, active: true, autoDiscardable: false });
+    await chrome.storage.session.set({ task: { ...task, tabId: t.id } });
+    await chrome.storage.session.set({ lastPageBeat: Date.now() }); // 新页面刚开，心跳重置
+    notify(`🔄 原来的标签页不在了，重新开一个：${url}（${reason}）`);
     return true;
   } catch (e) {
     notify("重新打开页面失败：" + String(e));

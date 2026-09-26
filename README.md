@@ -326,6 +326,35 @@ extension/
 └── icons/           # 扩展图标
 ```
 
+## 在远程桌面上跑（RDP 断开后卡住的问题）
+
+Windows 上**关掉远程桌面窗口后，Chrome 会把窗口判定成"被遮挡"**，于是把页面里的定时器
+节流甚至冻结 —— 表现就是"我一关远程桌面，它就卡住不动了"。这不是扩展的逻辑问题：
+页面自己的看门狗也活在被冻结的定时器上，一样不动。
+
+扩展侧已经做了两件事兜底：
+
+- 任务标签页用 `autoDiscardable: false` 创建，不给浏览器"回收不活跃标签页"的机会；
+- **后台看门狗**（`chrome.alarms`，每分钟一次，不受页面节流影响）：批量进行中如果页面
+  连续 3 分钟一点动静都没有（页面脚本每 15 秒报一次心跳），就把页面重新打开接着跑。
+
+要**根治**（否则冻结期间进度会很慢，只能靠看门狗每隔几分钟拉一次），做下面任一件：
+
+1. **带参数启动 Chrome**（推荐，桌面上的 `Chrome-防冻结启动.bat` 就是这个）：
+
+   ```bat
+   chrome.exe --disable-features=CalculateNativeWinOcclusion ^
+     --disable-background-timer-throttling ^
+     --disable-backgrounding-occluded-windows ^
+     --disable-renderer-backgrounding
+   ```
+
+2. **关远程桌面时不要直接关窗口**，在那个会话里用管理员身份执行
+   `tscon %sessionname% /dest:console` —— 把会话交还给本机控制台（不锁定、不进入断开状态），
+   Chrome 就一直按"窗口可见"来跑。
+
+3. 另外建议在 Chrome 设置 → 性能里**关掉「内存节省程序」**，避免标签页被回收。
+
 ## 流程说明
 
 首页点 Sign up → 跳注册页填表提交 → 等验证码邮件（90s 没到自动点 Resend 催信）

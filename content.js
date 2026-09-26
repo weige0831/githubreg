@@ -447,6 +447,10 @@ async function handleRateLimit(task, kind = "限流") {
 async function keepAlive(fn) {
   const t = setInterval(() => {
     window.__ghLastLogAt = Date.now();
+    // 同时报给后台一声（不算日志）：后台的看门狗靠它判断页面是不是被冻住了 ——
+    // 关掉远程桌面后 Chrome 会把页面的定时器节流/冻结，页面自己数不出"我卡了"，
+    // 只有后台的 alarm 还能跑。
+    send({ type: "page_beat" });
   }, 15000);
   try {
     return await fn();
