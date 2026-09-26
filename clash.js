@@ -42,14 +42,14 @@ async function clashRequest(path, { method = "GET", body } = {}) {
   const cfg = await getClashConfig();
   const base = trimUrl(cfg.baseUrl);
   if (!base) throw new Error("未配置 Clash 控制器地址");
-  const resp = await fetch(base + path, {
+  const resp = await fetchWithTimeout(base + path, {
     method,
     headers: {
       ...(cfg.secret ? { Authorization: `Bearer ${cfg.secret}` } : {}),
       ...(body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
-  });
+  }, 8000); // 控制器是本机服务，8 秒还不回就是它挂了，别把整批拖住
   if (!resp.ok) throw new Error(`Clash ${method} ${path} → HTTP ${resp.status}`);
   return resp.json().catch(() => null);
 }
@@ -331,9 +331,9 @@ async function clashProbe() {
   const tried = [];
   for (const base of CLASH_CANDIDATES) {
     try {
-      const resp = await fetch(base + "/version", {
+      const resp = await fetchWithTimeout(base + "/version", {
         headers: cfg.secret ? { Authorization: `Bearer ${cfg.secret}` } : {},
-      });
+      }, 3000); // 探测候选端口：每个最多等 3 秒，探不到就换下一个
       if (resp.status === 401) {
         tried.push({ base, status: 401 });
         continue;

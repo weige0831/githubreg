@@ -117,9 +117,30 @@ async function playSuccess() {
 
 // 统一的 fetch 包装：网络层失败时，先判断是不是「扩展没被授权访问这个地址」。
 // 这种情况 Chrome 直接把请求拦掉，报错只有一句 Failed to fetch，很难看出原因。
-async function fetchWithPermitHint(url, options, what = "") {
+// 带超时的 fetch。Chrome 的 fetch **默认没有超时**：节点坏了、代理吞包的时候，
+// 连接会被"黑洞"挂住，流程一个字都不打就停在那儿（本地实测：当前节点能连 GitHub、
+// 连不上邮局 → 邮局请求 12 秒还没响应，日志停在"已关闭 N 个标签页"之后再无输出）。
+// 加超时之后，这类挂住会变成明确的报错，交给上层已有的"重试 / 换节点"逻辑处理。
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), timeoutMs);
   try {
-    return await fetch(url, options);
+    return await fetch(url, { ...options, signal: ac.signal });
+  } catch (e) {
+    if (ac.signal.aborted) {
+      const err = new Error(`超时（${Math.round(timeoutMs / 1000)} 秒没响应，多半是当前节点连不通它）`);
+      err.timedOut = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchWithPermitHint(url, options, what = "", timeoutMs = 15000) {
+  try {
+    return await fetchWithTimeout(url, options, timeoutMs);
   } catch (e) {
     let permitted = true;
     try {
@@ -164,7 +185,7 @@ function extractCode(text) {
 // 拉邮件详情，从 confirm 链接末尾提取 8 位码
 async function fetchDetail(apiUrl, token, id) {
   try {
-    const resp = await fetch(`${trimUrl(apiUrl)}/api/v1/${token}/emails/${id}`);
+    const resp = await fetchWithTimeout(`${trimUrl(apiUrl)}/api/v1/${token}/emails/${id}`, {}, 10000);
     if (!resp.ok) return null;
     const detail = await resp.json();
     for (const f of ["body", "body_html", "html", "content", "text"]) {
@@ -198,7 +219,7 @@ async function pollForCode(token, timeoutMs = 150000) {
   let switched = false;
   while (Date.now() - start < timeoutMs) {
     try {
-      const resp = await fetch(`${trimUrl(apiUrl)}/api/v1/${token}/emails`);
+      const resp = await fetchWithTimeout(`${trimUrl(apiUrl)}/api/v1/${token}/emails`, {}, 8000);
       if (!resp.ok) {
         // 连不上（或服务端报错）：累计几次就换节点再继续收
         fetchFails += 1;
@@ -289,6 +310,7 @@ const WATCHDOG_ALARM = "ghreg-page-watchdog";
 const PAGE_IDLE_LIMIT_MS = 3 * 60 * 1000; // 页面 3 分钟一点动静都没有 = 冻住了
 const PAGE_JOLT_MS = 60 * 1000; // 60 秒没动静就先温和地拉一把（不重开）
 
+let busyStarting = false; // 正在开新号（还没建好页面标签页）
 let lastBeatAt = 0;
 let lastGapLogAt = 0;
 let lastJoltLogAt = 0;
@@ -339,6 +361,7 @@ async function onWatchdogTick() {
     stopWatchdogAlarm(); // 没有批量在跑就不用管了
     return { ok: true, action: "无批量在跑" };
   }
+  if (busyStarting) return { ok: true, action: "正在开新号（页面还没建起来），不动手" };
   const { lastPageBeat = 0 } = await chrome.storage.session.get("lastPageBeat");
   if (!lastPageBeat) return { ok: true, action: "还没有心跳" };
   const idle = Date.now() - lastPageBeat;
@@ -376,6 +399,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // 开一个注册流程（新邮箱 + 新账户 + 打开首页）
 // extra 会并进新任务里（比如换邮箱重试要带着 recoverAttempts，否则重试次数会被清零）
 async function startOne(extra = {}) {
+  busyStarting = true; // 这期间页面还没建起来，看门狗别抢着开标签页
   // 批量衔接：先关掉上一个任务的标签页，避免越开越多
   try {
     const prev = (await chrome.storage.session.get("task")).task;
@@ -396,6 +420,7 @@ async function startOne(extra = {}) {
   notify(`📧 临时邮箱: ${email}`);
   // 尽量自动呼出常驻侧边栏面板（不 await，避免拖慢批量衔接）
   openPanel(tab.id).catch(() => {});
+  busyStarting = false;
   return { email, password, username, token, tabId: tab.id };
 }
 
@@ -423,7 +448,8 @@ async function startOneWithRetry(extra = {}) {
     } catch (e) {
       fails += 1;
       notify(`⚠️ 开新号失败（第 ${fails} 次）：${String((e && e.message) || e)} —— 30 秒内自动重试，不会中断`);
-      if (fails % 3 === 0) {
+      // 超时基本可以断定是当前节点连不通它（不是服务端抖动），直接换节点，不必等满 3 次
+      if ((e && e.timedOut) || fails % 3 === 0) {
         // 连不上很可能是当前节点的问题（邮局也要经代理），换一个再试
         const sw = await clashSwitch("开新号连续失败，换节点重试", { rotate: true, blacklist: true }).catch(() => null);
         if (sw && sw.ok) notify(`已换节点：${sw.from || "?"} → ${sw.to || "?"}，继续重试`);
@@ -620,7 +646,7 @@ async function gamRequest(path, { method = "GET", body } = {}) {
 // 用管理密码换一个长期 API Key（管理器里叫「新建 API Key」）
 async function gamCreateApiKey(cfg, name = "github-auto-reg") {
   const jwt = await gamLogin(cfg);
-  const resp = await fetch(`${trimUrl(cfg.baseUrl)}/api/apikeys`, {
+  const resp = await fetchWithTimeout(`${trimUrl(cfg.baseUrl)}/api/apikeys`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${jwt}` },
     body: JSON.stringify({ name, expires_in_days: 0 }), // 0 = 永久

@@ -132,6 +132,14 @@ const api = {
   permitted: true,                  // 扩展有没有被授权访问本地地址
 };
 globalThis.fetch = async (url, opts = {}) => {
+  // 模拟“黑洞”：连接被挂住、永不返回（用来验证超时）
+  if (globalThis.__fetchHang) {
+    // 真实 fetch 在 abort 时会 reject：桩也要这样，否则测不出超时
+    return new Promise((_, reject) => {
+      const sig = opts && opts.signal;
+      if (sig) sig.addEventListener("abort", () => reject(Object.assign(new Error("The user aborted a request."), { name: "AbortError" })));
+    });
+  }
   const full = String(url);
   const path = full.replace(/^https?:\/\/[^/]+/, "");
   const host = full.replace(/^(https?:\/\/[^/]+).*/, "$1");
@@ -935,6 +943,28 @@ check("不会在 tabs.create 里传 autoDiscardable（传了开新号会直接�
 check("两处都用 tabs.update 设了 autoDiscardable: false",
   /keepTabAlive/.test(bg49) && /autoDiscardable: false/.test(bg49) && /autoDiscardable: false/.test(clash49), "");
 
+// 用例 50：网络请求都带超时（节点吃掉包时不能一直僵着）
+globalThis.__fetchHang = true;
+const t50 = Date.now();
+let timedOut = null;
+try {
+  await fetchWithTimeout("https://mail.example.com/api/v1/x", {}, 3000);
+} catch (e) {
+  timedOut = e;
+}
+globalThis.__fetchHang = false;
+check("挂住的请求会抛超时（不是一直等）", !!timedOut && timedOut.timedOut === true, String(timedOut && timedOut.message));
+check("超时后不拖泥带水（测试里 setTimeout 压到 20ms）", Date.now() - t50 < 2000, (Date.now() - t50) + "ms");
+
+const bg50 = fs.readFileSync("background.js", "utf8");
+const clash50 = fs.readFileSync("clash.js", "utf8");
+check("超时帮手在（AbortController）", /function fetchWithTimeout\(url, options = \{\}, timeoutMs = \d+\)/.test(bg50) && /new AbortController\(\)/.test(bg50), "");
+check("background 里除了超时帮手没有裸 fetch", (bg50.match(/await fetch\(/g) || []).length === 1, String((bg50.match(/await fetch\(/g) || []).length));
+check("clash 里没有裸 fetch（全部走超时）", (clash50.match(/await fetch\(/g) || []).length === 0, String((clash50.match(/await fetch\(/g) || []).length));
+check("收信轮询单次请求有超时（8 秒）", /emails`\, \{\}, 8000\)/.test(bg50), "");
+check("邮局建邮箱走超时路径", /function fetchWithPermitHint\(url, options, what = "", timeoutMs = \d+\)/.test(bg50), "");
+check("超时当场就换节点（不等满 3 次）", /\(e && e\.timedOut\) \|\| fails % 3 === 0/.test(bg50), "");
+check("开新号期间看门狗不抢着开标签页", /busyStarting = true/.test(bg50) && /if \(busyStarting\) return/.test(bg50), "");
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
 
