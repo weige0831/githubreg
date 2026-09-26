@@ -295,6 +295,15 @@ let lastJoltLogAt = 0;
 
 // 页面每次说话 / 每 15 秒报一次心跳都走这里。
 // 心跳变稀 = 页面被判定隐藏、定时器被降频（还在跑）；心跳完全不来 = 被冻结。
+// 让标签页不被浏览器当"不活跃标签"回收/冻结掉（那会让页面脚本整个消失，表现就是"卡住不动了"）。
+// 注意：autoDiscardable 只有 tabs.update 收，tabs.create 传这个参数会**直接抛错**
+// （报 Unexpected property: 'autoDiscardable'），所以必须在创建之后单独设一次。
+async function keepTabAlive(tabId) {
+  try {
+    await chrome.tabs.update(tabId, { autoDiscardable: false });
+  } catch (e) {}
+}
+
 async function markPageBeat(hidden) {
   const now = Date.now();
   const gap = lastBeatAt ? now - lastBeatAt : 0;
@@ -377,9 +386,9 @@ async function startOne(extra = {}) {
   const { email, token } = await createTempEmail();
   const password = randPassword();
   const username = randUsername();
-  // autoDiscardable: false —— 别让浏览器把任务标签页当"不活跃标签"回收掉（那会让页面脚本整个消失，
-  // 表现就是"卡住不动了"，而且后台再也不知道该重开哪个页面）
-  const tab = await chrome.tabs.create({ url: HOME_URL, active: true, autoDiscardable: false });
+  const tab = await chrome.tabs.create({ url: HOME_URL, active: true });
+  // autoDiscardable 只能通过 tabs.update 改（tabs.create 不收这个参数，传了会直接抛错）
+  await keepTabAlive(tab.id);
   await chrome.storage.session.set({
     task: { stage: "start", email, password, username, token, tabId: tab.id, ...extra },
   });

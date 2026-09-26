@@ -250,7 +250,9 @@ async function reloadTaskTab(reason) {
       notify(`🔄 已重新打开 ${url}（${reason}）`);
       return true;
     }
-    const t = await chrome.tabs.create({ url, active: true, autoDiscardable: false });
+    const t = await chrome.tabs.create({ url, active: true });
+    // autoDiscardable 只能改、不能在建标签页时传（传了 tabs.create 会抛错）
+    try { await chrome.tabs.update(t.id, { autoDiscardable: false }); } catch (e) {}
     await chrome.storage.session.set({ task: { ...task, tabId: t.id } });
     await chrome.storage.session.set({ lastPageBeat: Date.now() }); // 新页面刚开，心跳重置
     notify(`🔄 原来的标签页不在了，重新开一个：${url}（${reason}）`);

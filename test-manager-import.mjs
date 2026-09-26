@@ -70,7 +70,18 @@ globalThis.chrome = {
   tabs: {
     // liveTabs：哪些 tabId 还算"存在"。不在里面的 id，tabs.get 会像真实 Chrome 那样抛
     // "No tab with id: xxx" —— 用来复现「标签页被关掉后换节点重开失败」那个 bug。
-    create: async (props) => { calls.push("tabs.create"); lastTabCreate = props || {}; return { id: 1 }; },
+    // 像真实 Chrome 一样**校验参数**：tabs.create 不认识 autoDiscardable，
+    // 传了会报 "Unexpected property"（本地实测踩到：开新号直接失败）。
+    // 桩不校验就会把这种真机上必挂的写法放过去。
+    create: async (props) => {
+      calls.push("tabs.create");
+      const allowed = ["url", "active", "index", "openerTabId", "pinned", "selected", "windowId"];
+      for (const k of Object.keys(props || {})) {
+        if (!allowed.includes(k)) throw new Error("Error at parameter 'createProperties': Unexpected property: '" + k + "'.");
+      }
+      lastTabCreate = props || {};
+      return { id: 1 };
+    },
     get: async (id) => {
       calls.push("tabs.get");
       if (tabsDead.has(id)) throw new Error("No tab with id: " + id + ".");
@@ -421,7 +432,7 @@ check("生成 Key 用的是管理密码登录", api.keysCreated.includes("github
 
 // 用例 13：连续数量不再卡在 10；开始前先清理环境
 await send({ type: "mail_set_config", config: { apiUrl: "https://mail.example.com", domain: "example.com" } });
-calls.length = 0;
+calls.length = 0; navUrls.length = 0;
 const started = await send({ type: "start", count: BATCH_COUNT });
 const q = (await send({ type: "get_queue" })).queue;
 check(`连续 ${BATCH_COUNT} 个能生效（上限已放开）`, started.ok && started.count === BATCH_COUNT && q && q.total === BATCH_COUNT,
@@ -431,7 +442,7 @@ check("清理发生在开新标签页之前",
   calls.indexOf("browsingData.remove") !== -1 && calls.indexOf("browsingData.remove") < calls.indexOf("tabs.create"),
   calls.join(" → "));
 check("清理时关掉了多余标签页", calls.includes("tabs.remove"), calls.join(" → "));
-check("开跑前不额外做一次无用的跳转", !calls.includes("tabs.update"), calls.join(" → "));
+check("开跑前不额外做一次无用的跳转", navUrls.length === 0, "nav=" + JSON.stringify(navUrls) + " | " + calls.join(" → "));
 check("超大数量会被夹到上限（防手滑）", (await send({ type: "start", count: 999999 })).count === 999, "");
 
 // 用例 14：关掉「本地也存一份」→ 进了管理器的号不再留本地副本
@@ -849,7 +860,8 @@ const re1 = await reloadTaskTab("测试：标签页没了");
 check("标签页不在时不再报 'No tab with id' 失败", re1 === true, String(re1));
 check("标签页不在时重新开了一个", calls.includes("tabs.create"), calls.join(" → "));
 check("重开后把 task 指到新标签页", (await send({ type: "get_task" })).task.tabId === 1, JSON.stringify((await send({ type: "get_task" })).task));
-check("新标签页也禁止被浏览器回收", lastTabCreate && lastTabCreate.autoDiscardable === false, JSON.stringify(lastTabCreate));
+check("新标签页也禁止被浏览器回收（用 tabs.update 设）", calls.includes("tabs.autoDiscardable=false"), calls.join(" → "));
+check("建标签页时不传 autoDiscardable（传了 Chrome 会抛错）", !(lastTabCreate && "autoDiscardable" in lastTabCreate), JSON.stringify(lastTabCreate));
 
 calls.length = 0; navUrls.length = 0;
 await send({ type: "set_task", task: { stage: "fill", email: "a@example.com", tabId: 10 } }); // 10 是活的（没被标记）
@@ -914,6 +926,14 @@ check("保活与心跳在流程判断之前就起来",
   content48.indexOf("startAntiThrottle();") < content48.indexOf("const hasEmail"), "");
 check("后台分得清「被降频」还是「被冻结」",
   /gap > 30000 && gap < PAGE_IDLE_LIMIT_MS/.test(fs.readFileSync("background.js", "utf8")), "");
+
+// 用例 49（静态不变量）：autoDiscardable 只能用 tabs.update 设
+const bg49 = fs.readFileSync("background.js", "utf8");
+const clash49 = fs.readFileSync("clash.js", "utf8");
+check("不会在 tabs.create 里传 autoDiscardable（传了开新号会直接失败）",
+  !/tabs\.create\(\{[^}]*autoDiscardable/.test(bg49) && !/tabs\.create\(\{[^}]*autoDiscardable/.test(clash49), "");
+check("两处都用 tabs.update 设了 autoDiscardable: false",
+  /keepTabAlive/.test(bg49) && /autoDiscardable: false/.test(bg49) && /autoDiscardable: false/.test(clash49), "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);
