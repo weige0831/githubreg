@@ -81,10 +81,12 @@ globalThis.chrome = {
     update: async (id, props) => {
       calls.push("tabs.update");
       if (tabsDead.has(id)) throw new Error("No tab with id: " + id + ".");
-      navUrls.push((props && props.url) || "");
+      if (props && props.url) navUrls.push(props.url); // 只有真带地址才算导航（激活标签页不算）
       if (props && props.autoDiscardable === false) calls.push("tabs.autoDiscardable=false");
     },
     reload: async () => { calls.push("tabs.reload"); },
+    // 唤醒页面用（看门狗）：被冻结的标签页可能不回应，所以失败也不能影响流程
+    sendMessage: async () => { calls.push("tabs.sendMessage"); throw new Error("页面没响应"); },
   },
   browsingData: { remove: async () => { calls.push("browsingData.remove"); } },
 };
@@ -884,6 +886,34 @@ const content46 = fs.readFileSync("content.js", "utf8");
 check("页面 keepAlive 会报心跳给后台", /page_beat/.test(content46) && /__ghLastLogAt = Date\.now\(\)[\s\S]{0,300}page_beat/.test(content46), "");
 check("后台收到日志就记一次心跳", /content_log[\s\S]{0,200}markPageBeat/.test(fs.readFileSync("background.js", "utf8")), "");
 check("看门狗阈值是 3 分钟", /PAGE_IDLE_LIMIT_MS = 3 \* 60 \* 1000/.test(fs.readFileSync("background.js", "utf8")), "");
+
+// 用例 47：看门狗两级——先温和唤醒（不丢进度），再重开页面
+calls.length = 0; navUrls.length = 0;
+await send({ type: "set_task", task: { stage: "fill", email: "a@example.com", tabId: 10 } });
+store.session.queue = { total: 3, left: 2 };
+store.session.lastPageBeat = Date.now() - 90 * 1000; // 90 秒没动静
+const wdA = await onWatchdogTick();
+check("卡 60 秒～3 分钟：只唤醒、不重开（不丢进度）",
+  wdA.action === "唤醒页面" && navUrls.length === 0 && calls.includes("tabs.update"), JSON.stringify(wdA) + " / nav=" + JSON.stringify(navUrls));
+check("唤醒时会叫一声页面", calls.includes("tabs.sendMessage"), calls.join(" → "));
+
+calls.length = 0; navUrls.length = 0;
+store.session.lastPageBeat = Date.now() - 30 * 1000; // 30 秒：不到唤醒阈值
+const wdB = await onWatchdogTick();
+check("不到 60 秒看门狗不动手", wdB.action === "页面有动静" && navUrls.length === 0 && !calls.includes("tabs.update"), JSON.stringify(wdB));
+
+// 用例 48（静态不变量）：防节流保活与常驻心跳都在
+const content48 = fs.readFileSync("content.js", "utf8");
+check("保活用 WebRTC 环路（免节流的官方豁免项）",
+  /function startAntiThrottle\(\)/.test(content48) && /new RTCPeerConnection\(\)/.test(content48) && /createDataChannel/.test(content48), "");
+check("保活失败不影响流程（整体包在 try/catch 里）",
+  /function startAntiThrottle\(\) \{\n  try \{/.test(content48), "");
+check("心跳是常驻的（不只在长等待里报）",
+  /function startPageHeartbeat\(\)/.test(content48) && /setInterval\(\(\) => \{[\s\S]{0,200}page_beat[\s\S]{0,120}15000/.test(content48), "");
+check("保活与心跳在流程判断之前就起来",
+  content48.indexOf("startAntiThrottle();") < content48.indexOf("const hasEmail"), "");
+check("后台分得清「被降频」还是「被冻结」",
+  /gap > 30000 && gap < PAGE_IDLE_LIMIT_MS/.test(fs.readFileSync("background.js", "utf8")), "");
 
 console.log("\n=== 管理器侧最终数据 ===");
 for (const a of api.accounts) console.log(`  ${a.group.padEnd(16)} ${a.note.padEnd(22)} ${a.github_login}`);

@@ -287,11 +287,25 @@ async function setQueue(q) {
 // 而后台的 chrome.alarms **不受这个影响**，所以在后台盯心跳，超时就重开页面。
 const WATCHDOG_ALARM = "ghreg-page-watchdog";
 const PAGE_IDLE_LIMIT_MS = 3 * 60 * 1000; // 页面 3 分钟一点动静都没有 = 冻住了
+const PAGE_JOLT_MS = 60 * 1000; // 60 秒没动静就先温和地拉一把（不重开）
 
-async function markPageBeat() {
+let lastBeatAt = 0;
+let lastGapLogAt = 0;
+let lastJoltLogAt = 0;
+
+// 页面每次说话 / 每 15 秒报一次心跳都走这里。
+// 心跳变稀 = 页面被判定隐藏、定时器被降频（还在跑）；心跳完全不来 = 被冻结。
+async function markPageBeat(hidden) {
+  const now = Date.now();
+  const gap = lastBeatAt ? now - lastBeatAt : 0;
+  lastBeatAt = now;
   try {
-    await chrome.storage.session.set({ lastPageBeat: Date.now() });
+    await chrome.storage.session.set({ lastPageBeat: now });
   } catch (e) {}
+  if (gap > 30000 && gap < PAGE_IDLE_LIMIT_MS && now - lastGapLogAt > 60000) {
+    lastGapLogAt = now;
+    notify(`⏱️ 页面心跳间隔变成 ${Math.round(gap / 1000)} 秒${hidden ? "，而且页面自报「不可见」" : ""}：被系统/浏览器降频了，但还在跑`);
+  }
 }
 
 function startWatchdogAlarm() {
@@ -306,6 +320,10 @@ function stopWatchdogAlarm() {
   } catch (e) {}
 }
 
+// 定时看页面是不是还活着。分两级：
+//   ① 60 秒没动静 → 温和地拉一把（激活标签页 + 叫它一声），**不导航、不丢进度**；
+//      标签页不是活动标签而被冻结时，这一步通常就够了。
+//   ② 3 分钟没动静 → 真的被冻结了，只能重新打开页面（按 stage 接着跑）。
 async function onWatchdogTick() {
   const queue = await getQueue();
   if (!queue) {
@@ -315,7 +333,25 @@ async function onWatchdogTick() {
   const { lastPageBeat = 0 } = await chrome.storage.session.get("lastPageBeat");
   if (!lastPageBeat) return { ok: true, action: "还没有心跳" };
   const idle = Date.now() - lastPageBeat;
-  if (idle < PAGE_IDLE_LIMIT_MS) return { ok: true, action: "页面有动静", idleMs: idle };
+
+  if (idle >= PAGE_JOLT_MS) {
+    const { task } = await chrome.storage.session.get("task");
+    if (task && task.tabId) {
+      try {
+        await chrome.tabs.update(task.tabId, { active: true });
+        await chrome.tabs.sendMessage(task.tabId, { type: "wake" }).catch(() => {});
+      } catch (e) {}
+    }
+  }
+
+  if (idle < PAGE_IDLE_LIMIT_MS) {
+    if (idle >= PAGE_JOLT_MS && Date.now() - lastJoltLogAt > 120000) {
+      lastJoltLogAt = Date.now();
+      notify(`⏱️ 页面 ${Math.round(idle / 1000)} 秒没动静：拉了一下标签页（不重开，等它自己缓过来）`);
+    }
+    return { ok: true, action: idle >= PAGE_JOLT_MS ? "唤醒页面" : "页面有动静", idleMs: idle };
+  }
+
   const mins = Math.round(idle / 60000);
   notify(`⏱️ 页面已经 ${mins} 分钟没有任何动静（多半是被系统/浏览器冻结了）：重新打开页面接着跑`);
   await markPageBeat(); // 先记一次心跳，免得看门狗连环重开
@@ -902,8 +938,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         break;
       }
       case "page_beat": {
-        // 页面的定时器心跳（content.js 里的 keepAlive 每 15 秒报一次，不产生日志）
-        await markPageBeat();
+        // 页面的定时器心跳（content.js 每 15 秒报一次，不产生日志）
+        await markPageBeat(msg.hidden);
         sendResponse({ ok: true });
         break;
       }

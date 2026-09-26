@@ -903,6 +903,48 @@ async function finish(task, { save = true } = {}) {
   log(save ? "🎉 注册成功！账户已保存" : "🗑️ 这个号不保存（已把凭据打进日志）");
 }
 
+// ===== 防节流 / 防冻结保活 =====
+// 关掉远程桌面（RDP）后，Windows 会告诉 Chrome「这些窗口被遮挡了」，Chrome 随即：
+//   ① 把页面判定为隐藏 → 定时器降到每秒一次；隐藏超过 5 分钟且是链式定时器 → 降到每分钟一次
+//   ② 更久了还可能把标签页冻结（JS 全停，界面重连后才恢复）
+// 插件没有 API 能阻止①②，但 Chrome 自己给了豁免口子：**页面在用 WebRTC** 或 **在放声音**时不节流。
+// 这里用前者：两个本地 RTCPeerConnection 互联（纯环路，不出网、不产生任何流量），
+// 把 data channel 打开并一直保持 —— 页面即使被判定隐藏，也按「实时通信中」对待。
+// 顺带握一个 Web Lock（同样是"页面有活干"的信号）。建不出来就算了，流程照跑。
+function startAntiThrottle() {
+  try {
+    const a = new RTCPeerConnection();
+    const b = new RTCPeerConnection();
+    a.onicecandidate = (e) => { if (e.candidate) b.addIceCandidate(e.candidate).catch(() => {}); };
+    b.onicecandidate = (e) => { if (e.candidate) a.addIceCandidate(e.candidate).catch(() => {}); };
+    const dc = a.createDataChannel("keepalive");
+    dc.onopen = () => log("🛡 防节流保活已开启（页面视为实时通信中，隐藏时不被降频）");
+    b.ondatachannel = (e) => { window.__ghKeepChannel = e.channel; };
+    (async () => {
+      const offer = await a.createOffer();
+      await a.setLocalDescription(offer);
+      await b.setRemoteDescription(offer);
+      const answer = await b.createAnswer();
+      await b.setLocalDescription(answer);
+      await a.setRemoteDescription(answer);
+    })().catch(() => {});
+    if (navigator.locks && navigator.locks.request) {
+      navigator.locks.request("ghreg-keepalive", () => new Promise(() => {})).catch(() => {});
+    }
+  } catch (e) {
+    // 老浏览器 / 资源紧张时建不出来：不影响注册流程，靠后台看门狗兜底
+  }
+}
+
+// 页面心跳：只要这份脚本还在跑，就每 15 秒报一次（不算日志）。
+// 后台看门狗靠它区分两种"卡住"：**被节流**（心跳变稀但还在）和**被冻结**（心跳完全停）。
+// 它必须一直在跑，不能只在长等待里报，否则看门狗会误判。
+function startPageHeartbeat() {
+  setInterval(() => {
+    send({ type: "page_beat", hidden: document.visibilityState === "hidden" });
+  }, 15000);
+}
+
 // ===== 入口 =====
 // 按页面实际状态驱动（不再依赖易被页面跳转打断的 stage 字段）：
 //   /login + "created successfully"   -> 完成，保存账户
@@ -918,6 +960,10 @@ async function finish(task, { save = true } = {}) {
   // 避免日志翻倍、重复填表、重复提交
   if (window.__ghAutoRegBusy) return;
   window.__ghAutoRegBusy = true;
+
+  // 保活 + 心跳要在流程判断之前起来：页面被系统判成"隐藏"时，这两样是唯一还在动的信号
+  startAntiThrottle();
+  startPageHeartbeat();
 
   const task = await getTask();
   if (!task || task.stage === "done") return;
