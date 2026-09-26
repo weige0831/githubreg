@@ -747,7 +747,9 @@ check("清会话清 cookie + localStorage，且连 DataDome 的一起清（换 I
 // 用例 34b：GitHub 对可疑 IP 会把 /signup 换成 DataDome 滑块验证页（body 里只有一个跨域 iframe，
 // 文字读不到、也没有任何输入框）—— 按 DOM 结构认出来，才能早点换 IP + 清 cookie
 check("有 DataDome 验证页识别", /function dataDomeBlocked\(\)/.test(src34), "");
-check("按 iframe src/title 认 captcha-delivery/datadome", /captcha-delivery\\\.com\|datadome/i.test(src34) && /script\[src\*="captcha-delivery\.com"\]/.test(src34), "");
+check("只认整页验证 iframe（标题带 CAPTCHA/DataDome）", /\/captcha\|datadome\/i\.test\(title\)/.test(src34) && /captcha-delivery\\.com\/i\.test\(src\)/.test(src34), "");
+check("不再拿‘页面上有 DataDome 痕迹’当验证页（隐形指纹常年在，会误拉黑）", !/script\[src\*="captcha-delivery/.test(src34), "");
+check("要连续两次看到才算（不抢在表单渲染前动手）", /ddFirstSeenAt/.test(src34) && /now - ddFirstSeenAt >= 4000/.test(src34), "");
 check("只有页面上没表单/按钮时才算验证页（别拦能走的流程）",
   /return !qs\(EMAIL_SEL\)[\s\S]{0,90}hasSignupButton\(\)/.test(src34), "");
 check("limitKind 会把 DataDome 页判成拦截", /if \(dataDomeBlocked\(\)\) return/.test(src34), "");

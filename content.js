@@ -29,17 +29,26 @@ const BOT_CHALLENGE_RE =
 // GitHub 对"可疑 IP"会把 /signup 整页换成 DataDome 的滑块验证（页面上写着 Verification Required /
 // Slide right to secure your access）。那页的 body 里只有一个跨域 iframe（文字读不到、也没有任何
 // 输入框和按钮），所以只能按 DOM 结构认它。认出它是为了**早点换 IP + 清 cookie**，不是去解验证码。
+//
+// ⚠️ 别把"页面上有 DataDome 痕迹"当成验证页：DataDome 平时就在 GitHub 页面上**隐形跑指纹**
+// （`ct.captcha-delivery.com/c.js` + 一个不显示的 iframe），表单渲染出来的前一瞬间页面正是
+// "有 DataDome 痕迹、又还没有输入框" —— 按痕迹判断会误判成滑块验证页，白白拉黑一个好节点
+// （本地实测踩到：正常注册过程中被记成「人机验证（DataDome 滑块）」并拉黑了节点）。
+// 所以只认那个**整页的验证 iframe**（标题带 CAPTCHA/DataDome 且来自 captcha-delivery 域），
+// 并且要求**连续两次（间隔 ≥4 秒）都看到**才算数。
+let ddFirstSeenAt = 0;
 function dataDomeBlocked() {
-  let has = false;
-  for (const f of document.querySelectorAll("iframe")) {
-    const s = `${f.getAttribute("src") || ""} ${f.getAttribute("title") || ""}`;
-    if (/captcha-delivery\.com|datadome/i.test(s)) { has = true; break; }
-  }
-  if (!has) has = !!document.querySelector('script[src*="captcha-delivery.com"]');
-  if (!has) return false;
-  // 只有当页面上根本没有可填的东西时才算"这页就是验证页本身"——
-  // 万一以后验证码是嵌在正常注册表单里的，别把能走的流程也拦住。
-  return !qs(EMAIL_SEL) && !qs(PW_SEL) && !qs(CODE_INPUT_SEL) && !hasSignupButton();
+  const frame = [...document.querySelectorAll("iframe")].find((f) => {
+    const title = f.getAttribute("title") || "";
+    const src = f.getAttribute("src") || "";
+    return /captcha|datadome/i.test(title) && /captcha-delivery\.com/i.test(src);
+  });
+  if (!frame) { ddFirstSeenAt = 0; return false; }
+  // 页面上还有可填的东西 → 不是"整页验证页"，是正常流程页（或验证码还没渲染完）
+  if (qs(EMAIL_SEL) || qs(PW_SEL) || qs(CODE_INPUT_SEL) || hasSignupButton()) { ddFirstSeenAt = 0; return false; }
+  const now = Date.now();
+  if (!ddFirstSeenAt) { ddFirstSeenAt = now; return false; } // 第一次看到先记时间，不急着动手
+  return now - ddFirstSeenAt >= 4000;
 }
 
 // 返回命中的类型（""=没命中），顺手把两类拦截合并成一个入口
